@@ -1,0 +1,58 @@
+diff --git a/packages/sandbox/src/compilerOptions.ts b/packages/sandbox/src/compilerOptions.ts
+index 7d319c00..b498f541 100644
+--- a/packages/sandbox/src/compilerOptions.ts
++++ b/packages/sandbox/src/compilerOptions.ts
+@@ -68,6 +68,30 @@ export function getDefaultSandboxCompilerOptions(
+   return { ...settings, ...config.compilerOptions }
+ }
+ 
++function tryParseEnumValue(
++  key: string,
++  val: string,
++  ts: typeof import("typescript")
++): number | undefined {
++  const enumMap: Record<string, any> = {
++    target: ts.ScriptTarget,
++    module: ts.ModuleKind,
++    moduleResolution: ts.ModuleResolutionKind,
++    jsx: ts.JsxEmit,
++  }
++
++  const tsEnum = enumMap[key]
++  if (!tsEnum) return undefined
++
++  const upperVal = val.toUpperCase()
++  for (const enumKey of Object.keys(tsEnum)) {
++    if (typeof tsEnum[enumKey] === "number" && enumKey.toUpperCase() === upperVal) {
++      return tsEnum[enumKey]
++    }
++  }
++  return undefined
++}
++
+ /**
+  * Loop through all of the entries in the existing compiler options then compare them with the
+  * query params and return an object which is the changed settings via the query params
+@@ -89,6 +113,11 @@ export const getCompilerOptionsFromParams = (
+         toSet = false
+       } else if (!isNaN(parseInt(val, 10)) && playgroundDefaults[key] !== parseInt(val, 10)) {
+         toSet = parseInt(val, 10)
++      } else {
++        const enumVal = tryParseEnumValue(key, val, ts)
++        if (enumVal !== undefined && playgroundDefaults[key] !== enumVal) {
++          toSet = enumVal
++        }
+       }
+ 
+       if (toSet !== undefined) returnedOptions[key] = toSet
+@@ -100,6 +129,10 @@ export const getCompilerOptionsFromParams = (
+         let realValue: number | boolean = true
+         if (val === "false") realValue = false
+         if (!isNaN(parseInt(val, 10))) realValue = parseInt(val, 10)
++        else {
++          const enumVal = tryParseEnumValue(key, val, ts)
++          if (enumVal !== undefined) realValue = enumVal
++        }
+         returnedOptions[key] = realValue
+       }
+     }
