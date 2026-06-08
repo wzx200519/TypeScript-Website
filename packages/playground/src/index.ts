@@ -313,6 +313,35 @@ export const setupPlayground = (
     }
 
     li.onclick = () => {
+      // 清理 localStorage 中可能的旧类型信息
+      try {
+        // 尝试移除任何与 ATA 相关的缓存
+        const keysToRemove: string[] = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && (key.includes('ata') || key.includes('type_acquisition'))) {
+            keysToRemove.push(key)
+          }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key))
+      } catch (e) {
+        console.log("Failed to clean up type acquisition cache, continuing anyway", e)
+      }
+
+      // 清理 Monaco 的语言服务
+      try {
+        const tsDefaults = monaco.languages.typescript.typescriptDefaults
+        const jsDefaults = monaco.languages.typescript.javascriptDefaults
+        
+        // 移除所有额外的库
+        const tsLibs = tsDefaults.getExtraLibs()
+        Object.keys(tsLibs).forEach(key => tsDefaults.removeExtraLib(key))
+        const jsLibs = jsDefaults.getExtraLibs()
+        Object.keys(jsLibs).forEach(key => jsDefaults.removeExtraLib(key))
+      } catch (e) {
+        console.log("Failed to clean up Monaco language service, continuing anyway", e)
+      }
+
       const currentURL = sandbox.createURLQueryWithCompilerOptions(sandbox)
       const params = new URLSearchParams(currentURL.split("#")[0])
       const version = v === "Nightly" ? "next" : v

@@ -165,6 +165,28 @@ const Play: React.FC<Props> = (props) => {
       });
 
       re(["vs/editor/editor.main", "vs/language/typescript/tsWorker", "typescript-sandbox/index", "typescript-playground/index"], async (main: typeof import("monaco-editor"), tsWorker: any, sandbox: typeof import("@typescript/sandbox"), playground: typeof playgroundPackage) => {
+        // 清理任何已存在的 Monaco 编辑器和语言服务缓存
+        // 这有助于防止旧版本 TypeScript 的状态残留
+        if (window.monaco) {
+          try {
+            // 尝试清理旧编辑器实例
+            const oldEditors = document.querySelectorAll('.monaco-editor');
+            oldEditors.forEach(editor => editor.remove());
+            // 清除语言服务
+            if (window.monaco.languages.typescript) {
+              const tsDefaults = window.monaco.languages.typescript.typescriptDefaults;
+              const jsDefaults = window.monaco.languages.typescript.javascriptDefaults;
+              // 移除所有额外的库
+              const tsLibs = tsDefaults.getExtraLibs();
+              Object.keys(tsLibs).forEach(key => tsDefaults.removeExtraLib(key));
+              const jsLibs = jsDefaults.getExtraLibs();
+              Object.keys(jsLibs).forEach(key => jsDefaults.removeExtraLib(key));
+            }
+          } catch (e) {
+            console.log("Cleaning up old Monaco instance failed, continuing anyway", e);
+          }
+        }
+
         // Importing "vs/language/typescript/tsWorker" will set ts as a global
         const ts = (global as any).ts || tsWorker.typescript
         const isOK = main && ts && sandbox && playground

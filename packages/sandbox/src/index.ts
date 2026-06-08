@@ -166,6 +166,23 @@ export const createTypeScriptSandbox = (
     ? monaco.languages.typescript.javascriptDefaults
     : monaco.languages.typescript.typescriptDefaults
 
+  // 完全重置 TypeScript 语言服务配置以清除缓存
+  // 这是修复版本切换时类型定义和错误提示保持旧版本的关键
+  const resetTypeScriptLanguageService = () => {
+    // 先清除所有额外的 libs（防止旧版本的类型库残留）
+    const oldExtraLibs = defaults.getExtraLibs()
+    for (const key in oldExtraLibs) {
+      defaults.removeExtraLib(key)
+    }
+    // 重置诊断选项
+    defaults.setDiagnosticsOptions({
+      noSemanticValidation: false,
+      diagnosticCodesToIgnore: [2354],
+    })
+    // 重新设置编译器选项（强制语言服务重新初始化）
+    defaults.setCompilerOptions(compilerOptions)
+  }
+
   // @ts-ignore - these exist
   if (config.customTypeScriptWorkerPath && defaults.setWorkerOptions) {
     // @ts-ignore - this func must exist to have got here
@@ -174,12 +191,8 @@ export const createTypeScriptSandbox = (
     })
   }
 
-  defaults.setDiagnosticsOptions({
-    ...defaults.getDiagnosticsOptions(),
-    noSemanticValidation: false,
-    // This is when tslib is not found
-    diagnosticCodesToIgnore: [2354],
-  })
+  // 执行初始化重置
+  resetTypeScriptLanguageService()
 
   // In the future it'd be good to add support for an 'add many files'
   const addLibraryToRuntime = (code: string, _path: string) => {
@@ -248,7 +261,9 @@ export const createTypeScriptSandbox = (
   })
 
   config.logger.log("[Compiler] Set compiler options: ", compilerOptions)
-  defaults.setCompilerOptions(compilerOptions)
+  
+  // 确保在设置编译器选项时也完全重置语言服务
+  resetTypeScriptLanguageService()
 
   // To let clients plug into compiler settings changes
   let didUpdateCompilerSettings = (opts: CompilerOptions) => {}
@@ -268,21 +283,24 @@ export const createTypeScriptSandbox = (
     config.logger.log("[Compiler] Updating compiler options: ", opts)
 
     compilerOptions = { ...compilerOptions, ...opts }
-    defaults.setCompilerOptions(compilerOptions)
+    // 使用我们的重置函数来确保语言服务完全重新初始化
+    resetTypeScriptLanguageService()
     didUpdateCompilerSettings(compilerOptions)
   }
 
   const updateCompilerSetting = (key: keyof CompilerOptions, value: any) => {
     config.logger.log("[Compiler] Setting compiler options ", key, "to", value)
     compilerOptions[key] = value
-    defaults.setCompilerOptions(compilerOptions)
+    // 使用我们的重置函数来确保语言服务完全重新初始化
+    resetTypeScriptLanguageService()
     didUpdateCompilerSettings(compilerOptions)
   }
 
   const setCompilerSettings = (opts: CompilerOptions) => {
     config.logger.log("[Compiler] Setting compiler options: ", opts)
     compilerOptions = opts
-    defaults.setCompilerOptions(compilerOptions)
+    // 使用我们的重置函数来确保语言服务完全重新初始化
+    resetTypeScriptLanguageService()
     didUpdateCompilerSettings(compilerOptions)
   }
 
