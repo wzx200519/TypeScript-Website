@@ -1,0 +1,335 @@
+diff --git a/packages/playground/src/exporter.ts b/packages/playground/src/exporter.ts
+index bd523f1a..6bd0e490 100644
+--- a/packages/playground/src/exporter.ts
++++ b/packages/playground/src/exporter.ts
+@@ -290,6 +290,323 @@ ${codify(stringifiedCompilerOptions, "json")}
+     document.location.assign(`http://www.twitter.com/share?url=${fullURL}`)
+   }
+ 
++  async function shareAsGist() {
++    const modal = ui.createModalOverlay(document.getElementById("exports-dropdown")!)
++    modal.classList.add("share-as-gist-modal")
++    
++    const title = document.createElement("h3")
++    title.textContent = "Share as Gist"
++    modal.appendChild(title)
++    
++    const content = document.createElement("div")
++    content.id = "share-as-gist-content"
++    modal.appendChild(content)
++    
++    let isLoading = false
++    let gistUrl: string | null = null
++    let errorMessage: string | null = null
++    
++    const render = () => {
++      while (content.firstChild) {
++        content.removeChild(content.firstChild)
++      }
++      
++      if (isLoading) {
++        const loading = document.createElement("div")
++        loading.className = "share-as-gist-loading"
++        loading.textContent = "Creating Gist..."
++        content.appendChild(loading)
++        return
++      }
++      
++      if (gistUrl) {
++        const success = document.createElement("div")
++        success.className = "share-as-gist-success"
++        
++        const icon = document.createElement("div")
++        icon.className = "success-icon"
++        icon.innerHTML = "✓"
++        success.appendChild(icon)
++        
++        const successTitle = document.createElement("h4")
++        successTitle.textContent = "Gist Created!"
++        success.appendChild(successTitle)
++        
++        const message = document.createElement("p")
++        message.textContent = "Your gist has been created and the URL has been copied to your clipboard."
++        success.appendChild(message)
++        
++        content.appendChild(success)
++        
++        const urlContainer = document.createElement("div")
++        urlContainer.className = "share-as-gist-url"
++        const link = document.createElement("a")
++        link.href = gistUrl
++        link.target = "_blank"
++        link.rel = "noopener noreferrer"
++        link.textContent = gistUrl
++        urlContainer.appendChild(link)
++        content.appendChild(urlContainer)
++        
++        const buttonContainer = document.createElement("div")
++        buttonContainer.className = "share-as-gist-buttons"
++        
++        const createAnotherBtn = document.createElement("button")
++        createAnotherBtn.textContent = "Create Another Gist"
++        createAnotherBtn.className = "secondary"
++        createAnotherBtn.onclick = () => {
++          gistUrl = null
++          errorMessage = null
++          render()
++        }
++        buttonContainer.appendChild(createAnotherBtn)
++        
++        content.appendChild(buttonContainer)
++        return
++      }
++      
++      if (errorMessage) {
++        const error = document.createElement("div")
++        error.className = "share-as-gist-error"
++        
++        const icon = document.createElement("div")
++        icon.className = "error-icon"
++        icon.innerHTML = "✕"
++        error.appendChild(icon)
++        
++        const errorTitle = document.createElement("h4")
++        errorTitle.textContent = "Error Creating Gist"
++        error.appendChild(errorTitle)
++        
++        const message = document.createElement("p")
++        message.textContent = errorMessage
++        error.appendChild(message)
++        
++        content.appendChild(error)
++        
++        const buttonContainer = document.createElement("div")
++        buttonContainer.className = "share-as-gist-buttons"
++        
++        const tryAgainBtn = document.createElement("button")
++        tryAgainBtn.textContent = "Try Again"
++        tryAgainBtn.className = "secondary"
++        tryAgainBtn.onclick = () => {
++          errorMessage = null
++          render()
++        }
++        buttonContainer.appendChild(tryAgainBtn)
++        
++        content.appendChild(buttonContainer)
++        return
++      }
++      
++      const description = document.createElement("p")
++      description.className = "share-as-gist-description"
++      description.textContent = "Share your code as a GitHub Gist. This will create a public gist with your code and a tsconfig.json file."
++      content.appendChild(description)
++      
++      const buttonContainer = document.createElement("div")
++      buttonContainer.className = "share-as-gist-buttons"
++      
++      const createBtn = document.createElement("button")
++      createBtn.textContent = "Share as Gist"
++      createBtn.onclick = async () => {
++        isLoading = true
++        render()
++        
++        try {
++          const tsConfig = {
++            compilerOptions: {
++              target: "es2015",
++              module: "esnext",
++              strict: true,
++              esModuleInterop: true,
++              skipLibCheck: true,
++              forceConsistentCasingInFileNames: true
++            }
++          }
++          
++          const gistData = {
++            description: `TypeScript ${sandbox.ts.version} Playground Code`,
++            public: true,
++            files: {
++              "index.ts": {
++                content: sandbox.getText()
++              },
++              "tsconfig.json": {
++                content: JSON.stringify(tsConfig, null, 2)
++              },
++              "README.md": {
++                content: `# TypeScript Playground Code
++
++This gist contains code shared from the TypeScript Playground, using TypeScript ${sandbox.ts.version}.
++
++## Files
++- \`index.ts\`: The main TypeScript code
++- \`tsconfig.json\`: Recommended compiler configuration
++
++## View in Playground
++You can view this code in the TypeScript Playground at https://www.typescriptlang.org/play.
++`
++              }
++            }
++          }
++          
++          const response = await fetch("https://api.github.com/gists", {
++            method: "POST",
++            headers: {
++              "Accept": "application/vnd.github.v3+json",
++              "Content-Type": "application/json"
++            },
++            body: JSON.stringify(gistData)
++          })
++          
++          if (!response.ok) {
++            const errorData = await response.json().catch(() => ({}))
++            const errorMsg = errorData.message || `Failed to create gist: ${response.status} ${response.statusText}`
++            
++            if (response.status === 403) {
++              throw new Error("GitHub API rate limit exceeded. Please try again later or use a personal access token.")
++            }
++            if (response.status === 422) {
++              throw new Error("Invalid gist data. Please check your code and try again.")
++            }
++            
++            throw new Error(errorMsg)
++          }
++          
++          const data = await response.json()
++          
++          if (!data.html_url) {
++            throw new Error("Gist created but no URL returned from GitHub.")
++          }
++          
++          gistUrl = data.html_url
++          
++          try {
++            await navigator.clipboard.writeText(data.html_url)
++          } catch (clipboardError) {
++            console.warn("Failed to copy to clipboard:", clipboardError)
++          }
++          
++          ui.flashInfo("Gist created and URL copied to clipboard!")
++        } catch (error) {
++          errorMessage = error instanceof Error ? error.message : "An unknown error occurred while creating the gist."
++        } finally {
++          isLoading = false
++          render()
++        }
++      }
++      buttonContainer.appendChild(createBtn)
++      content.appendChild(buttonContainer)
++    }
++    
++    const style = document.createElement("style")
++    style.textContent = `
++      .share-as-gist-modal {
++        max-width: 500px;
++      }
++      .share-as-gist-modal h3 {
++        margin-top: 0;
++        margin-bottom: 16px;
++      }
++      .share-as-gist-description {
++        color: #666;
++        margin-bottom: 16px;
++        line-height: 1.5;
++      }
++      .share-as-gist-buttons {
++        display: flex;
++        gap: 12px;
++        margin-top: 16px;
++      }
++      .share-as-gist-buttons button {
++        background-color: #007acc;
++        color: white;
++        border: none;
++        padding: 10px 20px;
++        border-radius: 6px;
++        font-size: 14px;
++        font-weight: 500;
++        cursor: pointer;
++        transition: background-color 0.2s ease;
++      }
++      .share-as-gist-buttons button:hover:not(:disabled) {
++        background-color: #005a9e;
++      }
++      .share-as-gist-buttons button:disabled {
++        opacity: 0.6;
++        cursor: not-allowed;
++      }
++      .share-as-gist-buttons button.secondary {
++        background-color: #f0f0f0;
++        color: #333;
++      }
++      .share-as-gist-buttons button.secondary:hover:not(:disabled) {
++        background-color: #e0e0e0;
++      }
++      .share-as-gist-loading {
++        text-align: center;
++        padding: 24px;
++        color: #666;
++      }
++      .share-as-gist-success {
++        text-align: center;
++        margin-bottom: 16px;
++      }
++      .success-icon {
++        font-size: 48px;
++        color: #28a745;
++        margin: 0 auto 12px;
++      }
++      .share-as-gist-success h4 {
++        margin: 0 0 8px;
++        color: #333;
++      }
++      .share-as-gist-success p {
++        margin: 0;
++        color: #666;
++        font-size: 14px;
++      }
++      .share-as-gist-url {
++        background-color: #f5f5f5;
++        padding: 12px;
++        border-radius: 6px;
++        margin-bottom: 16px;
++        word-break: break-all;
++      }
++      .share-as-gist-url a {
++        color: #007acc;
++        text-decoration: none;
++      }
++      .share-as-gist-url a:hover {
++        text-decoration: underline;
++      }
++      .share-as-gist-error {
++        text-align: center;
++        margin-bottom: 16px;
++      }
++      .error-icon {
++        font-size: 48px;
++        color: #dc3545;
++        margin: 0 auto 12px;
++      }
++      .share-as-gist-error h4 {
++        margin: 0 0 8px;
++        color: #dc3545;
++      }
++      .share-as-gist-error p {
++        margin: 0;
++        color: #666;
++        font-size: 14px;
++        line-height: 1.5;
++      }
++    `
++    modal.appendChild(style)
++    
++    render()
++  }
++
+   return {
+     openProjectInStackBlitz,
+     openProjectInCodeSandbox,
+@@ -300,5 +617,6 @@ ${codify(stringifiedCompilerOptions, "json")}
+     openInBugWorkbench,
+     openInVSCodeDev,
+     exportAsTweet,
++    shareAsGist,
+   }
+ }
