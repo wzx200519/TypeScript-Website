@@ -49,6 +49,39 @@ describe(getCompilerOptionsFromParams, () => {
     `)
   })
 
+  it("handles string enum values like target=ESNext", () => {
+    const params = new URLSearchParams("?target=ESNext")
+    const defaults = getDefaultSandboxCompilerOptions({ filetype: "js" } as any, fauxMonaco, {
+      versionMajorMinor: "4.9",
+    })
+
+    expect(getCompilerOptionsFromParams(defaults, ts, params)).toEqual({
+      "target": ts.ScriptTarget.ESNext,
+    })
+  })
+
+  it("handles string enum values like module=ESNext", () => {
+    const params = new URLSearchParams("?module=ESNext")
+    const defaults = getDefaultSandboxCompilerOptions({ filetype: "js" } as any, fauxMonaco, {
+      versionMajorMinor: "4.9",
+    })
+
+    expect(getCompilerOptionsFromParams(defaults, ts, params)).toEqual({
+      "module": ts.ModuleKind.ESNext,
+    })
+  })
+
+  it("handles string enum values like jsx=React", () => {
+    const params = new URLSearchParams("?jsx=React")
+    const defaults = getDefaultSandboxCompilerOptions({ filetype: "js" } as any, fauxMonaco, {
+      versionMajorMinor: "4.9",
+    })
+
+    expect(getCompilerOptionsFromParams(defaults, ts, params)).toEqual({
+      "jsx": ts.JsxEmit.React,
+    })
+  })
+
   it("handles settings options which haven't been given defaults in the monaco defaults", () => {
     const search = "?ts=4.4.0-beta&exactOptionalPropertyTypes=true#code/JYOw"
     const params = new URLSearchParams(search)

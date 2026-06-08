@@ -78,14 +78,38 @@ export const getCompilerOptionsFromParams = (
   params: URLSearchParams
 ): CompilerOptions => {
   const returnedOptions: CompilerOptions = {}
+  // 需要特殊处理的枚举类型选项
+  const enumMaps: any = {
+    target: ts.ScriptTarget,
+    module: ts.ModuleKind,
+    moduleResolution: ts.ModuleResolutionKind,
+    jsx: ts.JsxEmit,
+    newLine: ts.NewLineKind,
+  }
 
   params.forEach((val, key) => {
-    // First use the defaults object to drop compiler flags which are already set to the default
+    // 检查是否是需要特殊处理的枚举选项
+    const enumMap = enumMaps[key]
+    if (enumMap) {
+      // 尝试将字符串值转换为对应的枚举值
+      const enumValue = enumMap[val]
+      if (enumValue !== undefined) {
+        returnedOptions[key] = enumValue
+        return
+      }
+      // 如果字符串找不到，尝试直接转换为数字（向后兼容）
+      if (!isNaN(parseInt(val, 10))) {
+        returnedOptions[key] = parseInt(val, 10)
+        return
+      }
+    }
+
+    // 其他选项的常规处理
     if (playgroundDefaults[key]) {
       let toSet = undefined
       if (val === "true" && playgroundDefaults[key] !== true) {
         toSet = true
-      } else if (val === "false" && (playgroundDefaults[key] as any) !== false) { // TODO(jakebailey): remove as any, check undefined above
+      } else if (val === "false" && (playgroundDefaults[key] as any) !== false) {
         toSet = false
       } else if (!isNaN(parseInt(val, 10)) && playgroundDefaults[key] !== parseInt(val, 10)) {
         toSet = parseInt(val, 10)
@@ -114,11 +138,33 @@ export const getCompilerOptionsFromParams = (
 export const createURLQueryWithCompilerOptions = (_sandbox: any, paramOverrides?: any): string => {
   const sandbox = _sandbox as import("./index").Sandbox
   const initialOptions = new URLSearchParams(document.location.search)
+  const ts = sandbox.ts
+
+  // 需要特殊处理的枚举类型选项
+  const enumMaps: any = {
+    target: ts.ScriptTarget,
+    module: ts.ModuleKind,
+    moduleResolution: ts.ModuleResolutionKind,
+    jsx: ts.JsxEmit,
+    newLine: ts.NewLineKind,
+  }
 
   const compilerOptions = sandbox.getCompilerOptions()
   const compilerDefaults = sandbox.compilerDefaults
   const diff = Object.entries(compilerOptions).reduce((acc, [key, value]) => {
     if (value !== compilerDefaults[key]) {
+      // 检查是否是需要特殊处理的枚举选项
+      const enumMap = enumMaps[key]
+      if (enumMap && typeof value === "number") {
+        // 尝试将数字值转换为对应的字符串表示
+        // TypeScript 枚举是反向映射的：枚举值 -> 字符串键
+        const stringValue = enumMap[value]
+        if (stringValue !== undefined) {
+          // @ts-ignore
+          acc[key] = stringValue
+          return acc
+        }
+      }
       // @ts-ignore
       acc[key] = compilerOptions[key]
     }

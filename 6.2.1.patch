@@ -1,155 +1,283 @@
-diff --git a/packages/playground/src/index.ts b/packages/playground/src/index.ts
-index 5c352804..a497aae8 100644
---- a/packages/playground/src/index.ts
-+++ b/packages/playground/src/index.ts
-@@ -313,6 +313,35 @@ export const setupPlayground = (
-     }
- 
-     li.onclick = () => {
-+      // 清理 localStorage 中可能的旧类型信息
-+      try {
-+        // 尝试移除任何与 ATA 相关的缓存
-+        const keysToRemove: string[] = []
-+        for (let i = 0; i < localStorage.length; i++) {
-+          const key = localStorage.key(i)
-+          if (key && (key.includes('ata') || key.includes('type_acquisition'))) {
-+            keysToRemove.push(key)
-+          }
-+        }
-+        keysToRemove.forEach(key => localStorage.removeItem(key))
-+      } catch (e) {
-+        console.log("Failed to clean up type acquisition cache, continuing anyway", e)
-+      }
-+
-+      // 清理 Monaco 的语言服务
-+      try {
-+        const tsDefaults = monaco.languages.typescript.typescriptDefaults
-+        const jsDefaults = monaco.languages.typescript.javascriptDefaults
-+        
-+        // 移除所有额外的库
-+        const tsLibs = tsDefaults.getExtraLibs()
-+        Object.keys(tsLibs).forEach(key => tsDefaults.removeExtraLib(key))
-+        const jsLibs = jsDefaults.getExtraLibs()
-+        Object.keys(jsLibs).forEach(key => jsDefaults.removeExtraLib(key))
-+      } catch (e) {
-+        console.log("Failed to clean up Monaco language service, continuing anyway", e)
-+      }
-+
-       const currentURL = sandbox.createURLQueryWithCompilerOptions(sandbox)
-       const params = new URLSearchParams(currentURL.split("#")[0])
-       const version = v === "Nightly" ? "next" : v
-diff --git a/packages/sandbox/src/index.ts b/packages/sandbox/src/index.ts
-index 0ac59d19..b067c3ee 100644
---- a/packages/sandbox/src/index.ts
-+++ b/packages/sandbox/src/index.ts
-@@ -166,6 +166,23 @@ export const createTypeScriptSandbox = (
-     ? monaco.languages.typescript.javascriptDefaults
-     : monaco.languages.typescript.typescriptDefaults
- 
-+  // 完全重置 TypeScript 语言服务配置以清除缓存
-+  // 这是修复版本切换时类型定义和错误提示保持旧版本的关键
-+  const resetTypeScriptLanguageService = () => {
-+    // 先清除所有额外的 libs（防止旧版本的类型库残留）
-+    const oldExtraLibs = defaults.getExtraLibs()
-+    for (const key in oldExtraLibs) {
-+      defaults.removeExtraLib(key)
-+    }
-+    // 重置诊断选项
-+    defaults.setDiagnosticsOptions({
-+      noSemanticValidation: false,
-+      diagnosticCodesToIgnore: [2354],
-+    })
-+    // 重新设置编译器选项（强制语言服务重新初始化）
-+    defaults.setCompilerOptions(compilerOptions)
+diff --git a/6.2.1.patch b/6.2.1.patch
+index da5f0685..e69de29b 100644
+--- a/6.2.1.patch
++++ b/6.2.1.patch
+@@ -1,155 +0,0 @@
+-diff --git a/packages/playground/src/index.ts b/packages/playground/src/index.ts
+-index 5c352804..a497aae8 100644
+---- a/packages/playground/src/index.ts
+-+++ b/packages/playground/src/index.ts
+-@@ -313,6 +313,35 @@ export const setupPlayground = (
+-     }
+- 
+-     li.onclick = () => {
+-+      // 清理 localStorage 中可能的旧类型信息
+-+      try {
+-+        // 尝试移除任何与 ATA 相关的缓存
+-+        const keysToRemove: string[] = []
+-+        for (let i = 0; i < localStorage.length; i++) {
+-+          const key = localStorage.key(i)
+-+          if (key && (key.includes('ata') || key.includes('type_acquisition'))) {
+-+            keysToRemove.push(key)
+-+          }
+-+        }
+-+        keysToRemove.forEach(key => localStorage.removeItem(key))
+-+      } catch (e) {
+-+        console.log("Failed to clean up type acquisition cache, continuing anyway", e)
+-+      }
+-+
+-+      // 清理 Monaco 的语言服务
+-+      try {
+-+        const tsDefaults = monaco.languages.typescript.typescriptDefaults
+-+        const jsDefaults = monaco.languages.typescript.javascriptDefaults
+-+        
+-+        // 移除所有额外的库
+-+        const tsLibs = tsDefaults.getExtraLibs()
+-+        Object.keys(tsLibs).forEach(key => tsDefaults.removeExtraLib(key))
+-+        const jsLibs = jsDefaults.getExtraLibs()
+-+        Object.keys(jsLibs).forEach(key => jsDefaults.removeExtraLib(key))
+-+      } catch (e) {
+-+        console.log("Failed to clean up Monaco language service, continuing anyway", e)
+-+      }
+-+
+-       const currentURL = sandbox.createURLQueryWithCompilerOptions(sandbox)
+-       const params = new URLSearchParams(currentURL.split("#")[0])
+-       const version = v === "Nightly" ? "next" : v
+-diff --git a/packages/sandbox/src/index.ts b/packages/sandbox/src/index.ts
+-index 0ac59d19..b067c3ee 100644
+---- a/packages/sandbox/src/index.ts
+-+++ b/packages/sandbox/src/index.ts
+-@@ -166,6 +166,23 @@ export const createTypeScriptSandbox = (
+-     ? monaco.languages.typescript.javascriptDefaults
+-     : monaco.languages.typescript.typescriptDefaults
+- 
+-+  // 完全重置 TypeScript 语言服务配置以清除缓存
+-+  // 这是修复版本切换时类型定义和错误提示保持旧版本的关键
+-+  const resetTypeScriptLanguageService = () => {
+-+    // 先清除所有额外的 libs（防止旧版本的类型库残留）
+-+    const oldExtraLibs = defaults.getExtraLibs()
+-+    for (const key in oldExtraLibs) {
+-+      defaults.removeExtraLib(key)
+-+    }
+-+    // 重置诊断选项
+-+    defaults.setDiagnosticsOptions({
+-+      noSemanticValidation: false,
+-+      diagnosticCodesToIgnore: [2354],
+-+    })
+-+    // 重新设置编译器选项（强制语言服务重新初始化）
+-+    defaults.setCompilerOptions(compilerOptions)
+-+  }
+-+
+-   // @ts-ignore - these exist
+-   if (config.customTypeScriptWorkerPath && defaults.setWorkerOptions) {
+-     // @ts-ignore - this func must exist to have got here
+-@@ -174,12 +191,8 @@ export const createTypeScriptSandbox = (
+-     })
+-   }
+- 
+--  defaults.setDiagnosticsOptions({
+--    ...defaults.getDiagnosticsOptions(),
+--    noSemanticValidation: false,
+--    // This is when tslib is not found
+--    diagnosticCodesToIgnore: [2354],
+--  })
+-+  // 执行初始化重置
+-+  resetTypeScriptLanguageService()
+- 
+-   // In the future it'd be good to add support for an 'add many files'
+-   const addLibraryToRuntime = (code: string, _path: string) => {
+-@@ -248,7 +261,9 @@ export const createTypeScriptSandbox = (
+-   })
+- 
+-   config.logger.log("[Compiler] Set compiler options: ", compilerOptions)
+--  defaults.setCompilerOptions(compilerOptions)
+-+  
+-+  // 确保在设置编译器选项时也完全重置语言服务
+-+  resetTypeScriptLanguageService()
+- 
+-   // To let clients plug into compiler settings changes
+-   let didUpdateCompilerSettings = (opts: CompilerOptions) => {}
+-@@ -268,21 +283,24 @@ export const createTypeScriptSandbox = (
+-     config.logger.log("[Compiler] Updating compiler options: ", opts)
+- 
+-     compilerOptions = { ...compilerOptions, ...opts }
+--    defaults.setCompilerOptions(compilerOptions)
+-+    // 使用我们的重置函数来确保语言服务完全重新初始化
+-+    resetTypeScriptLanguageService()
+-     didUpdateCompilerSettings(compilerOptions)
+-   }
+- 
+-   const updateCompilerSetting = (key: keyof CompilerOptions, value: any) => {
+-     config.logger.log("[Compiler] Setting compiler options ", key, "to", value)
+-     compilerOptions[key] = value
+--    defaults.setCompilerOptions(compilerOptions)
+-+    // 使用我们的重置函数来确保语言服务完全重新初始化
+-+    resetTypeScriptLanguageService()
+-     didUpdateCompilerSettings(compilerOptions)
+-   }
+- 
+-   const setCompilerSettings = (opts: CompilerOptions) => {
+-     config.logger.log("[Compiler] Setting compiler options: ", opts)
+-     compilerOptions = opts
+--    defaults.setCompilerOptions(compilerOptions)
+-+    // 使用我们的重置函数来确保语言服务完全重新初始化
+-+    resetTypeScriptLanguageService()
+-     didUpdateCompilerSettings(compilerOptions)
+-   }
+- 
+-diff --git a/packages/typescriptlang-org/src/templates/play.tsx b/packages/typescriptlang-org/src/templates/play.tsx
+-index d22b9566..aa9261eb 100644
+---- a/packages/typescriptlang-org/src/templates/play.tsx
+-+++ b/packages/typescriptlang-org/src/templates/play.tsx
+-@@ -165,6 +165,28 @@ const Play: React.FC<Props> = (props) => {
+-       });
+- 
+-       re(["vs/editor/editor.main", "vs/language/typescript/tsWorker", "typescript-sandbox/index", "typescript-playground/index"], async (main: typeof import("monaco-editor"), tsWorker: any, sandbox: typeof import("@typescript/sandbox"), playground: typeof playgroundPackage) => {
+-+        // 清理任何已存在的 Monaco 编辑器和语言服务缓存
+-+        // 这有助于防止旧版本 TypeScript 的状态残留
+-+        if (window.monaco) {
+-+          try {
+-+            // 尝试清理旧编辑器实例
+-+            const oldEditors = document.querySelectorAll('.monaco-editor');
+-+            oldEditors.forEach(editor => editor.remove());
+-+            // 清除语言服务
+-+            if (window.monaco.languages.typescript) {
+-+              const tsDefaults = window.monaco.languages.typescript.typescriptDefaults;
+-+              const jsDefaults = window.monaco.languages.typescript.javascriptDefaults;
+-+              // 移除所有额外的库
+-+              const tsLibs = tsDefaults.getExtraLibs();
+-+              Object.keys(tsLibs).forEach(key => tsDefaults.removeExtraLib(key));
+-+              const jsLibs = jsDefaults.getExtraLibs();
+-+              Object.keys(jsLibs).forEach(key => jsDefaults.removeExtraLib(key));
+-+            }
+-+          } catch (e) {
+-+            console.log("Cleaning up old Monaco instance failed, continuing anyway", e);
+-+          }
+-+        }
+-+
+-         // Importing "vs/language/typescript/tsWorker" will set ts as a global
+-         const ts = (global as any).ts || tsWorker.typescript
+-         const isOK = main && ts && sandbox && playground
+diff --git a/packages/sandbox/src/compilerOptions.ts b/packages/sandbox/src/compilerOptions.ts
+index 7d319c00..679a251b 100644
+--- a/packages/sandbox/src/compilerOptions.ts
++++ b/packages/sandbox/src/compilerOptions.ts
+@@ -78,14 +78,38 @@ export const getCompilerOptionsFromParams = (
+   params: URLSearchParams
+ ): CompilerOptions => {
+   const returnedOptions: CompilerOptions = {}
++  // 需要特殊处理的枚举类型选项
++  const enumMaps: any = {
++    target: ts.ScriptTarget,
++    module: ts.ModuleKind,
++    moduleResolution: ts.ModuleResolutionKind,
++    jsx: ts.JsxEmit,
++    newLine: ts.NewLineKind,
 +  }
+ 
+   params.forEach((val, key) => {
+-    // First use the defaults object to drop compiler flags which are already set to the default
++    // 检查是否是需要特殊处理的枚举选项
++    const enumMap = enumMaps[key]
++    if (enumMap) {
++      // 尝试将字符串值转换为对应的枚举值
++      const enumValue = enumMap[val]
++      if (enumValue !== undefined) {
++        returnedOptions[key] = enumValue
++        return
++      }
++      // 如果字符串找不到，尝试直接转换为数字（向后兼容）
++      if (!isNaN(parseInt(val, 10))) {
++        returnedOptions[key] = parseInt(val, 10)
++        return
++      }
++    }
 +
-   // @ts-ignore - these exist
-   if (config.customTypeScriptWorkerPath && defaults.setWorkerOptions) {
-     // @ts-ignore - this func must exist to have got here
-@@ -174,12 +191,8 @@ export const createTypeScriptSandbox = (
-     })
-   }
++    // 其他选项的常规处理
+     if (playgroundDefaults[key]) {
+       let toSet = undefined
+       if (val === "true" && playgroundDefaults[key] !== true) {
+         toSet = true
+-      } else if (val === "false" && (playgroundDefaults[key] as any) !== false) { // TODO(jakebailey): remove as any, check undefined above
++      } else if (val === "false" && (playgroundDefaults[key] as any) !== false) {
+         toSet = false
+       } else if (!isNaN(parseInt(val, 10)) && playgroundDefaults[key] !== parseInt(val, 10)) {
+         toSet = parseInt(val, 10)
+@@ -114,11 +138,33 @@ export const getCompilerOptionsFromParams = (
+ export const createURLQueryWithCompilerOptions = (_sandbox: any, paramOverrides?: any): string => {
+   const sandbox = _sandbox as import("./index").Sandbox
+   const initialOptions = new URLSearchParams(document.location.search)
++  const ts = sandbox.ts
++
++  // 需要特殊处理的枚举类型选项
++  const enumMaps: any = {
++    target: ts.ScriptTarget,
++    module: ts.ModuleKind,
++    moduleResolution: ts.ModuleResolutionKind,
++    jsx: ts.JsxEmit,
++    newLine: ts.NewLineKind,
++  }
  
--  defaults.setDiagnosticsOptions({
--    ...defaults.getDiagnosticsOptions(),
--    noSemanticValidation: false,
--    // This is when tslib is not found
--    diagnosticCodesToIgnore: [2354],
--  })
-+  // 执行初始化重置
-+  resetTypeScriptLanguageService()
- 
-   // In the future it'd be good to add support for an 'add many files'
-   const addLibraryToRuntime = (code: string, _path: string) => {
-@@ -248,7 +261,9 @@ export const createTypeScriptSandbox = (
+   const compilerOptions = sandbox.getCompilerOptions()
+   const compilerDefaults = sandbox.compilerDefaults
+   const diff = Object.entries(compilerOptions).reduce((acc, [key, value]) => {
+     if (value !== compilerDefaults[key]) {
++      // 检查是否是需要特殊处理的枚举选项
++      const enumMap = enumMaps[key]
++      if (enumMap && typeof value === "number") {
++        // 尝试将数字值转换为对应的字符串表示
++        // TypeScript 枚举是反向映射的：枚举值 -> 字符串键
++        const stringValue = enumMap[value]
++        if (stringValue !== undefined) {
++          // @ts-ignore
++          acc[key] = stringValue
++          return acc
++        }
++      }
+       // @ts-ignore
+       acc[key] = compilerOptions[key]
+     }
+diff --git a/packages/sandbox/test/defaultCompilerOptions.test.ts b/packages/sandbox/test/defaultCompilerOptions.test.ts
+index 0ec0c6de..346666df 100644
+--- a/packages/sandbox/test/defaultCompilerOptions.test.ts
++++ b/packages/sandbox/test/defaultCompilerOptions.test.ts
+@@ -49,6 +49,39 @@ describe(getCompilerOptionsFromParams, () => {
+     `)
    })
  
-   config.logger.log("[Compiler] Set compiler options: ", compilerOptions)
--  defaults.setCompilerOptions(compilerOptions)
-+  
-+  // 确保在设置编译器选项时也完全重置语言服务
-+  resetTypeScriptLanguageService()
- 
-   // To let clients plug into compiler settings changes
-   let didUpdateCompilerSettings = (opts: CompilerOptions) => {}
-@@ -268,21 +283,24 @@ export const createTypeScriptSandbox = (
-     config.logger.log("[Compiler] Updating compiler options: ", opts)
- 
-     compilerOptions = { ...compilerOptions, ...opts }
--    defaults.setCompilerOptions(compilerOptions)
-+    // 使用我们的重置函数来确保语言服务完全重新初始化
-+    resetTypeScriptLanguageService()
-     didUpdateCompilerSettings(compilerOptions)
-   }
- 
-   const updateCompilerSetting = (key: keyof CompilerOptions, value: any) => {
-     config.logger.log("[Compiler] Setting compiler options ", key, "to", value)
-     compilerOptions[key] = value
--    defaults.setCompilerOptions(compilerOptions)
-+    // 使用我们的重置函数来确保语言服务完全重新初始化
-+    resetTypeScriptLanguageService()
-     didUpdateCompilerSettings(compilerOptions)
-   }
- 
-   const setCompilerSettings = (opts: CompilerOptions) => {
-     config.logger.log("[Compiler] Setting compiler options: ", opts)
-     compilerOptions = opts
--    defaults.setCompilerOptions(compilerOptions)
-+    // 使用我们的重置函数来确保语言服务完全重新初始化
-+    resetTypeScriptLanguageService()
-     didUpdateCompilerSettings(compilerOptions)
-   }
- 
-diff --git a/packages/typescriptlang-org/src/templates/play.tsx b/packages/typescriptlang-org/src/templates/play.tsx
-index d22b9566..aa9261eb 100644
---- a/packages/typescriptlang-org/src/templates/play.tsx
-+++ b/packages/typescriptlang-org/src/templates/play.tsx
-@@ -165,6 +165,28 @@ const Play: React.FC<Props> = (props) => {
-       });
- 
-       re(["vs/editor/editor.main", "vs/language/typescript/tsWorker", "typescript-sandbox/index", "typescript-playground/index"], async (main: typeof import("monaco-editor"), tsWorker: any, sandbox: typeof import("@typescript/sandbox"), playground: typeof playgroundPackage) => {
-+        // 清理任何已存在的 Monaco 编辑器和语言服务缓存
-+        // 这有助于防止旧版本 TypeScript 的状态残留
-+        if (window.monaco) {
-+          try {
-+            // 尝试清理旧编辑器实例
-+            const oldEditors = document.querySelectorAll('.monaco-editor');
-+            oldEditors.forEach(editor => editor.remove());
-+            // 清除语言服务
-+            if (window.monaco.languages.typescript) {
-+              const tsDefaults = window.monaco.languages.typescript.typescriptDefaults;
-+              const jsDefaults = window.monaco.languages.typescript.javascriptDefaults;
-+              // 移除所有额外的库
-+              const tsLibs = tsDefaults.getExtraLibs();
-+              Object.keys(tsLibs).forEach(key => tsDefaults.removeExtraLib(key));
-+              const jsLibs = jsDefaults.getExtraLibs();
-+              Object.keys(jsLibs).forEach(key => jsDefaults.removeExtraLib(key));
-+            }
-+          } catch (e) {
-+            console.log("Cleaning up old Monaco instance failed, continuing anyway", e);
-+          }
-+        }
++  it("handles string enum values like target=ESNext", () => {
++    const params = new URLSearchParams("?target=ESNext")
++    const defaults = getDefaultSandboxCompilerOptions({ filetype: "js" } as any, fauxMonaco, {
++      versionMajorMinor: "4.9",
++    })
 +
-         // Importing "vs/language/typescript/tsWorker" will set ts as a global
-         const ts = (global as any).ts || tsWorker.typescript
-         const isOK = main && ts && sandbox && playground
++    expect(getCompilerOptionsFromParams(defaults, ts, params)).toEqual({
++      "target": ts.ScriptTarget.ESNext,
++    })
++  })
++
++  it("handles string enum values like module=ESNext", () => {
++    const params = new URLSearchParams("?module=ESNext")
++    const defaults = getDefaultSandboxCompilerOptions({ filetype: "js" } as any, fauxMonaco, {
++      versionMajorMinor: "4.9",
++    })
++
++    expect(getCompilerOptionsFromParams(defaults, ts, params)).toEqual({
++      "module": ts.ModuleKind.ESNext,
++    })
++  })
++
++  it("handles string enum values like jsx=React", () => {
++    const params = new URLSearchParams("?jsx=React")
++    const defaults = getDefaultSandboxCompilerOptions({ filetype: "js" } as any, fauxMonaco, {
++      versionMajorMinor: "4.9",
++    })
++
++    expect(getCompilerOptionsFromParams(defaults, ts, params)).toEqual({
++      "jsx": ts.JsxEmit.React,
++    })
++  })
++
+   it("handles settings options which haven't been given defaults in the monaco defaults", () => {
+     const search = "?ts=4.4.0-beta&exactOptionalPropertyTypes=true#code/JYOw"
+     const params = new URLSearchParams(search)
