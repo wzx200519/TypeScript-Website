@@ -1,0 +1,225 @@
+import React, { useState, useCallback, useRef, useEffect } from "react"
+
+export interface ShareAsGistProps {
+  code: string
+  typescriptVersion: string
+}
+
+interface GistFilePayload {
+  content: string
+}
+
+interface CreateGistPayload {
+  description: string
+  public: boolean
+  files: Record<string, GistFilePayload>
+}
+
+interface GistAPIResponse {
+  html_url: string
+  id: string
+}
+
+type ShareStatus = "idle" | "loading" | "success" | "error"
+
+const GIST_API_URL = "https://api.github.com/gists"
+const GIST_URL_PATTERN = /^https:\/\/gist\.github\.com\/[a-f0-9]+$/
+
+function sanitizeGistUrl(url: string): string | null {
+  const trimmed = url.trim()
+  if (GIST_URL_PATTERN.test(trimmed)) {
+    return trimmed
+  }
+  return null
+}
+
+function getRateLimitMessage(response: Response): string | null {
+  const remaining = response.headers.get("X-RateLimit-Remaining")
+  if (remaining === "0") {
+    const resetEpoch = response.headers.get("X-RateLimit-Reset")
+    if (resetEpoch) {
+      const resetDate = new Date(Number(resetEpoch) * 1000)
+      const minutes = Math.max(1, Math.ceil((resetDate.getTime() - Date.now()) / 60000))
+      return `GitHub API rate limit exceeded. Please try again in ${minutes} minute${minutes > 1 ? "s" : ""}.`
+    }
+    return "GitHub API rate limit exceeded. Please try again later."
+  }
+  return null
+}
+
+export const ShareAsGist: React.FC<ShareAsGistProps> = ({ code, typescriptVersion }) => {
+  const [status, setStatus] = useState<ShareStatus>("idle")
+  const [gistUrl, setGistUrl] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current) {
+        clearTimeout(copiedTimerRef.current)
+      }
+    }
+  }, [])
+
+  const createGist = useCallback(async () => {
+    if (status === "loading") return
+
+    setStatus("loading")
+    setErrorMessage(null)
+    setGistUrl(null)
+    setCopied(false)
+
+    const payload: CreateGistPayload = {
+      description: `TypeScript Playground Snippet (v${typescriptVersion})`,
+      public: false,
+      files: {
+        "index.ts": {
+          content: code,
+        },
+      },
+    }
+
+    try {
+      const response = await fetch(GIST_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/vnd.github.v3+json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        if (response.status === 403 || response.status === 429) {
+          const rateLimitMsg = getRateLimitMessage(response)
+          throw new Error(rateLimitMsg || "GitHub API request was forbidden. You may have hit the rate limit.")
+        }
+
+        if (response.status === 422) {
+          throw new Error("Invalid request: the code content could not be processed by GitHub.")
+        }
+
+        throw new Error(`GitHub API returned an error (HTTP ${response.status}). Please try again later.`)
+      }
+
+      const data: GistAPIResponse = await response.json()
+
+      const safeUrl = sanitizeGistUrl(data.html_url)
+      if (!safeUrl) {
+        throw new Error("Received an unexpected response from GitHub. The gist URL could not be verified.")
+      }
+
+      setGistUrl(safeUrl)
+      setStatus("success")
+    } catch (err: unknown) {
+      setStatus("error")
+
+      if (err instanceof TypeError && err.message === "Failed to fetch") {
+        setErrorMessage("Network error: could not reach GitHub. Please check your internet connection.")
+        return
+      }
+
+      if (err instanceof Error) {
+        setErrorMessage(err.message)
+        return
+      }
+
+      setErrorMessage("An unexpected error occurred while creating the gist.")
+    }
+  }, [code, typescriptVersion, status])
+
+  const copyToClipboard = useCallback(async () => {
+    if (!gistUrl) return
+
+    try {
+      await navigator.clipboard.writeText(gistUrl)
+      setCopied(true)
+
+      if (copiedTimerRef.current) {
+        clearTimeout(copiedTimerRef.current)
+      }
+
+      copiedTimerRef.current = setTimeout(() => {
+        setCopied(false)
+        copiedTimerRef.current = null
+      }, 2000)
+    } catch {
+      setErrorMessage("Failed to copy the gist URL to clipboard.")
+      setStatus("error")
+    }
+  }, [gistUrl])
+
+  const reset = useCallback(() => {
+    setStatus("idle")
+    setGistUrl(null)
+    setErrorMessage(null)
+    setCopied(false)
+  }, [])
+
+  const isLoading = status === "loading"
+  const hasError = status === "error"
+  const hasSuccess = status === "success"
+
+  return (
+    <div className="share-as-gist" role="region" aria-label="Share code as GitHub Gist">
+      {!hasSuccess && !hasError && (
+        <button
+          type="button"
+          className="share-as-gist-button"
+          onClick={createGist}
+          disabled={isLoading || !code.trim()}
+          aria-busy={isLoading}
+        >
+          {isLoading ? "Creating Gist…" : "Share as Gist"}
+        </button>
+      )}
+
+      {isLoading && (
+        <span className="share-as-gist-loading" role="status" aria-live="polite">
+          <span className="share-as-gist-spinner" aria-hidden="true" />
+          Uploading to GitHub…
+        </span>
+      )}
+
+      {hasError && errorMessage && (
+        <div className="share-as-gist-error" role="alert">
+          <p className="share-as-gist-error-message">{errorMessage}</p>
+          <button type="button" className="share-as-gist-retry" onClick={reset}>
+            Try Again
+          </button>
+        </div>
+      )}
+
+      {hasSuccess && gistUrl && (
+        <div className="share-as-gist-success">
+          <p className="share-as-gist-url-label">Gist created:</p>
+          <a
+            className="share-as-gist-url"
+            href={gistUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {gistUrl}
+          </a>
+          <button
+            type="button"
+            className="share-as-gist-copy"
+            onClick={copyToClipboard}
+          >
+            {copied ? "Copied!" : "Copy URL"}
+          </button>
+          <button
+            type="button"
+            className="share-as-gist-new"
+            onClick={reset}
+          >
+            Create Another
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default ShareAsGist
