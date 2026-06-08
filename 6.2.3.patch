@@ -1,0 +1,38 @@
+// packages/playground/src/compiler.ts
+import * as ts from 'typescript';
+import { ScriptTarget, ModuleKind } from 'typescript';
+
+export function getCompilerOptions(searchParams: URLSearchParams): ts.CompilerOptions {
+  const options: ts.CompilerOptions = {};
+
+  const target = searchParams.get('target');
+  if (target) {
+    // 过滤掉枚举的反向数字映射，保留真实的字符串键，并忽略大小写进行匹配
+    const targetKey = Object.keys(ScriptTarget).find(
+      key => isNaN(Number(key)) && key.toLowerCase() === target.toLowerCase()
+    );
+    if (targetKey) {
+      options.target = ScriptTarget[targetKey as keyof typeof ScriptTarget];
+    }
+  }
+
+  const module = searchParams.get('module');
+  if (module) {
+    // 同样将 module 字符串安全映射到对应的 ModuleKind 枚举值
+    const moduleKey = Object.keys(ModuleKind).find(
+      key => isNaN(Number(key)) && key.toLowerCase() === module.toLowerCase()
+    );
+    if (moduleKey) {
+      options.module = ModuleKind[moduleKey as keyof typeof ModuleKind];
+    }
+  }
+
+  const strict = searchParams.get('strict');
+  if (strict === 'true') {
+    options.strict = true;
+  } else if (strict === 'false') {
+    options.strict = false;
+  }
+
+  return options;
+}
