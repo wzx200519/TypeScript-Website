@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
 export interface ShareAsGistProps {
   /** 当前编辑器的代码 */
@@ -6,7 +6,7 @@ export interface ShareAsGistProps {
   /** 当前 TypeScript 的版本号 */
   tsVersion: string;
   /** 成功创建并复制 gist 链接后的回调（可选） */
-  onSuccess?: (url: string) => void;
+  onSuccess?: (gistUrl: string) => void;
   /** 发生错误时的回调（可选） */
   onError?: (error: Error) => void;
 }
@@ -17,19 +17,33 @@ export const ShareAsGist: React.FC<ShareAsGistProps> = ({ code, tsVersion, onSuc
   const [gistUrl, setGistUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // 清理未完成的请求
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const handleShare = async () => {
+    if (isLoading) return;
+
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     setIsLoading(true);
     setErrorMsg(null);
     setCopied(false);
+    setGistUrl(null);
 
     try {
-      // 注意：GitHub Gist API 在 2018 年已经废弃了匿名 Gist 的创建功能。
-      // 这里根据需求实现匿名创建的请求逻辑，若要实际运行成功可能需要传入 Authorization header。
       const response = await fetch('https://api.github.com/gists', {
         method: 'POST',
         headers: {
+          'Accept': 'application/vnd.github.v3+json',
           'Content-Type': 'application/json',
-          'Accept': 'application/vnd.github.v3+json'
         },
         body: JSON.stringify({
           description: `TypeScript Playground Code (TS v${tsVersion})`,
@@ -39,17 +53,18 @@ export const ShareAsGist: React.FC<ShareAsGistProps> = ({ code, tsVersion, onSuc
               content: code || '// Empty'
             }
           }
-        })
+        }),
+        signal: abortController.signal,
       });
 
       if (!response.ok) {
         if (response.status === 403 || response.status === 429) {
           throw new Error('请求被拒绝或速率限制 (Rate limit exceeded)。请稍后再试。');
         }
-        if (response.status === 401) {
-          throw new Error('未授权 (Unauthorized)：GitHub API 可能不再支持完全匿名的 Gist 创建，请检查是否需要 Token。');
+        if (response.status === 401 || response.status === 404 || response.status === 422) {
+          throw new Error('未授权或请求无效：GitHub API 可能不再支持完全匿名的 Gist 创建，请检查 API 要求。');
         }
-        throw new Error(`GitHub Gist API 错误: ${response.statusText} (${response.status})`);
+        throw new Error(`网络失败或 GitHub Gist API 错误: ${response.statusText} (${response.status})`);
       }
 
       const data = await response.json();
@@ -60,26 +75,24 @@ export const ShareAsGist: React.FC<ShareAsGistProps> = ({ code, tsVersion, onSuc
 
       const newGistUrl = data.html_url;
       setGistUrl(newGistUrl);
-
-      // 将链接复制到剪贴板
+      
       try {
         await navigator.clipboard.writeText(newGistUrl);
         setCopied(true);
         setTimeout(() => setCopied(false), 3000);
       } catch (clipboardError) {
         console.error('复制到剪贴板失败', clipboardError);
-        // 剪贴板失败不应该阻断流程，仅在控制台提示
       }
-
-      if (onSuccess) {
-        onSuccess(newGistUrl);
-      }
+      
+      onSuccess?.(newGistUrl);
     } catch (err) {
-      const message = err instanceof Error ? err.message : '发生未知网络错误';
-      setErrorMsg(message);
-      if (onError && err instanceof Error) {
-        onError(err);
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // 请求被取消，不需要报错
+        return;
       }
+      const errorMessage = err instanceof Error ? err.message : '发生未知错误';
+      setErrorMsg(errorMessage);
+      onError?.(err instanceof Error ? err : new Error(errorMessage));
     } finally {
       setIsLoading(false);
     }
@@ -88,9 +101,9 @@ export const ShareAsGist: React.FC<ShareAsGistProps> = ({ code, tsVersion, onSuc
   return (
     <div className="share-as-gist-container" style={styles.container}>
       <button 
-        onClick={handleShare} 
-        disabled={isLoading}
-        style={isLoading ? { ...styles.button, ...styles.buttonDisabled } : styles.button}
+        onClick={handleShare}
+        disabled={isLoading || !code.trim()}
+        style={isLoading || !code.trim() ? { ...styles.button, ...styles.buttonDisabled } : styles.button}
       >
         {isLoading ? '正在创建 Gist...' : '分享为 Gist'}
       </button>
