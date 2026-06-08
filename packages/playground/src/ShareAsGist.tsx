@@ -1,0 +1,180 @@
+import React, { useState } from 'react';
+
+export interface ShareAsGistProps {
+  /** 当前编辑器的代码 */
+  code: string;
+  /** 当前 TypeScript 的版本号 */
+  tsVersion: string;
+  /** 成功创建并复制 gist 链接后的回调（可选） */
+  onSuccess?: (url: string) => void;
+  /** 发生错误时的回调（可选） */
+  onError?: (error: Error) => void;
+}
+
+export const ShareAsGist: React.FC<ShareAsGistProps> = ({ code, tsVersion, onSuccess, onError }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [gistUrl, setGistUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async () => {
+    setIsLoading(true);
+    setErrorMsg(null);
+    setCopied(false);
+
+    try {
+      // 注意：GitHub Gist API 在 2018 年已经废弃了匿名 Gist 的创建功能。
+      // 这里根据需求实现匿名创建的请求逻辑，若要实际运行成功可能需要传入 Authorization header。
+      const response = await fetch('https://api.github.com/gists', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json'
+        },
+        body: JSON.stringify({
+          description: `TypeScript Playground Code (TS v${tsVersion})`,
+          public: false, // 创建为 secret gist
+          files: {
+            'playground.ts': {
+              content: code || '// Empty'
+            }
+          }
+        })
+      });
+
+      if (!response.ok) {
+        if (response.status === 403 || response.status === 429) {
+          throw new Error('请求被拒绝或速率限制 (Rate limit exceeded)。请稍后再试。');
+        }
+        if (response.status === 401) {
+          throw new Error('未授权 (Unauthorized)：GitHub API 可能不再支持完全匿名的 Gist 创建，请检查是否需要 Token。');
+        }
+        throw new Error(`GitHub Gist API 错误: ${response.statusText} (${response.status})`);
+      }
+
+      const data = await response.json();
+      
+      if (!data || !data.html_url) {
+        throw new Error('GitHub Gist API 返回的数据无效。');
+      }
+
+      const newGistUrl = data.html_url;
+      setGistUrl(newGistUrl);
+
+      // 将链接复制到剪贴板
+      try {
+        await navigator.clipboard.writeText(newGistUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 3000);
+      } catch (clipboardError) {
+        console.error('复制到剪贴板失败', clipboardError);
+        // 剪贴板失败不应该阻断流程，仅在控制台提示
+      }
+
+      if (onSuccess) {
+        onSuccess(newGistUrl);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '发生未知网络错误';
+      setErrorMsg(message);
+      if (onError && err instanceof Error) {
+        onError(err);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="share-as-gist-container" style={styles.container}>
+      <button 
+        onClick={handleShare} 
+        disabled={isLoading}
+        style={isLoading ? { ...styles.button, ...styles.buttonDisabled } : styles.button}
+      >
+        {isLoading ? '正在创建 Gist...' : '分享为 Gist'}
+      </button>
+
+      {/* 
+        React 默认会对渲染的字符串进行转义，从而避免 XSS 风险。
+        切勿在此处使用 dangerouslySetInnerHTML。
+      */}
+      {errorMsg && (
+        <div className="error-message" role="alert" style={styles.error}>
+          {errorMsg}
+        </div>
+      )}
+
+      {gistUrl && (
+        <div className="success-message" style={styles.success}>
+          <p style={{ margin: '0 0 4px 0' }}>Gist 创建成功！</p>
+          <div style={styles.urlContainer}>
+            <a 
+              href={gistUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={styles.link}
+            >
+              {gistUrl}
+            </a>
+            {copied && <span style={styles.copiedText}>(已复制到剪贴板)</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 简单的内联样式对象
+const styles = {
+  container: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+    padding: '12px',
+    border: '1px solid #ccc',
+    borderRadius: '4px',
+    maxWidth: '400px',
+  },
+  button: {
+    padding: '8px 16px',
+    cursor: 'pointer',
+    backgroundColor: '#3178c6',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    fontWeight: 'bold',
+  },
+  buttonDisabled: {
+    backgroundColor: '#a0b9d9',
+    cursor: 'not-allowed',
+  },
+  error: {
+    color: '#d32f2f',
+    backgroundColor: '#ffebee',
+    padding: '8px',
+    borderRadius: '4px',
+    fontSize: '14px',
+  },
+  success: {
+    fontSize: '14px',
+    backgroundColor: '#e8f5e9',
+    padding: '8px',
+    borderRadius: '4px',
+  },
+  urlContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap' as const,
+  },
+  link: {
+    color: '#3178c6',
+    textDecoration: 'none',
+    wordBreak: 'break-all' as const,
+  },
+  copiedText: {
+    color: '#2e7d32',
+    fontSize: '12px',
+  }
+};
