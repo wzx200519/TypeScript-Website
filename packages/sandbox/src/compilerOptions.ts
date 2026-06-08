@@ -1,7 +1,50 @@
+import { ScriptTarget } from "typescript"
 import { SandboxConfig } from "."
 
 type CompilerOptions = import("monaco-editor").languages.typescript.CompilerOptions
 type Monaco = typeof import("monaco-editor")
+type TS = typeof import("typescript")
+type CommandLineOption = {
+  name: string
+  type?: string | Map<string, string | number | boolean>
+}
+
+const normalizeCompilerOptionValue = (value: string) => value.toLowerCase().replace(/[-_\s]/g, "")
+
+const getCommandLineOption = (ts: TS, key: string) => {
+  const optionDeclarations = ((ts as any).optionDeclarations || []) as CommandLineOption[]
+  return optionDeclarations.find(option => option.name === key)
+}
+
+const getEnumCompilerOptionValue = (option: CommandLineOption, value: string) => {
+  if (!(option.type instanceof Map)) return undefined
+
+  const normalizedValue = normalizeCompilerOptionValue(value)
+  const matchedEntry = Array.from(option.type.entries()).find(([name]) => {
+    return normalizeCompilerOptionValue(name) === normalizedValue
+  })
+
+  return matchedEntry?.[1]
+}
+
+const getCompilerOptionValue = (option: CommandLineOption, value: string) => {
+  if (value === "true") return true
+  if (value === "false") return false
+
+  const numericValue = parseInt(value, 10)
+  if (!Number.isNaN(numericValue)) return numericValue
+
+  const enumValue = getEnumCompilerOptionValue(option, value)
+  if (enumValue !== undefined) return enumValue
+
+  if (option.name === "target" && normalizeCompilerOptionValue(value) === "esnext") {
+    return ScriptTarget.ESNext
+  }
+
+  if (option.type === "string") return value
+
+  return undefined
+}
 
 /**
  * These are the defaults, but they also act as the list of all compiler options
@@ -26,7 +69,6 @@ export function getDefaultSandboxCompilerOptions(
     noImplicitReturns: true,
     noUncheckedIndexedAccess: false,
 
-    // 3.7 off, 3.8 on I think
     useDefineForClassFields: false,
 
     alwaysStrict: true,
@@ -78,39 +120,25 @@ export const getCompilerOptionsFromParams = (
   params: URLSearchParams
 ): CompilerOptions => {
   const returnedOptions: CompilerOptions = {}
+  const defaultOptions = playgroundDefaults as Record<string, unknown>
+  const parsedOptions = returnedOptions as Record<string, unknown>
 
   params.forEach((val, key) => {
-    // First use the defaults object to drop compiler flags which are already set to the default
-    if (playgroundDefaults[key]) {
-      let toSet = undefined
-      if (val === "true" && playgroundDefaults[key] !== true) {
-        toSet = true
-      } else if (val === "false" && (playgroundDefaults[key] as any) !== false) { // TODO(jakebailey): remove as any, check undefined above
-        toSet = false
-      } else if (!isNaN(parseInt(val, 10)) && playgroundDefaults[key] !== parseInt(val, 10)) {
-        toSet = parseInt(val, 10)
-      }
+    const option = getCommandLineOption(ts, key)
+    if (!option) return
 
-      if (toSet !== undefined) returnedOptions[key] = toSet
-    } else {
-      // If that doesn't work, double check that the flag exists and allow it through
-      // @ts-ignore
-      const flagExists = ts.optionDeclarations.find(opt => opt.name === key)
-      if (flagExists) {
-        let realValue: number | boolean = true
-        if (val === "false") realValue = false
-        if (!isNaN(parseInt(val, 10))) realValue = parseInt(val, 10)
-        returnedOptions[key] = realValue
-      }
+    const parsedValue = getCompilerOptionValue(option, val)
+    if (parsedValue === undefined) return
+
+    const hasDefaultValue = Object.prototype.hasOwnProperty.call(defaultOptions, key)
+    if (!hasDefaultValue || defaultOptions[key] !== parsedValue) {
+      parsedOptions[key] = parsedValue
     }
   })
 
   return returnedOptions
 }
 
-// Can't set sandbox to be the right type because the param would contain this function
-
-/** Gets a query string representation (hash + queries) */
 export const createURLQueryWithCompilerOptions = (_sandbox: any, paramOverrides?: any): string => {
   const sandbox = _sandbox as import("./index").Sandbox
   const initialOptions = new URLSearchParams(document.location.search)
@@ -126,15 +154,12 @@ export const createURLQueryWithCompilerOptions = (_sandbox: any, paramOverrides?
     return acc
   }, {})
 
-  // The text of the TS/JS as the hash
   const hash = `code/${sandbox.lzstring.compressToEncodedURIComponent(sandbox.getText())}`
 
   let urlParams: any = Object.assign({}, diff)
   for (const param of ["lib", "ts"]) {
     const params = new URLSearchParams(location.search)
     if (params.has(param)) {
-      // Special case the nightly where it uses the TS version to hardcode
-      // the nightly build
       if (param === "ts" && (params.get(param) === "Nightly" || params.get(param) === "next")) {
         urlParams["ts"] = sandbox.ts.version
       } else {
@@ -143,7 +168,6 @@ export const createURLQueryWithCompilerOptions = (_sandbox: any, paramOverrides?
     }
   }
 
-  // Support sending the selection, but only if there is a selection, and it's not the whole thing
   const s = sandbox.editor.getSelection()
 
   const isNotEmpty =
@@ -186,11 +210,6 @@ export const createURLQueryWithCompilerOptions = (_sandbox: any, paramOverrides?
         return `${key}=${encodeURIComponent(value as string)}`
       })
       .join("&")
-
-    // We want to keep around custom query variables, which
-    // are usually used by playground plugins, with the exception
-    // being the install-plugin param and any compiler options
-    // which have a default value
 
     initialOptions.forEach((value, key) => {
       const skip = ["ssl", "ssc", "pln", "pc"]

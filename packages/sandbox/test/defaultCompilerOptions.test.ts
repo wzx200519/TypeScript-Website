@@ -14,7 +14,6 @@ const fauxMonaco: any = {
 
 describe(getCompilerOptionsFromParams, () => {
   it("ignores compiler flags which are the same as the defaults", () => {
-    // noImplicitReturns=true is the default, and shouldn't be in the object
     const params = new URLSearchParams("?noImplicitThis=false&noImplicitReturns=true#code/JYOw")
     const defaults = getDefaultSandboxCompilerOptions({ filetype: "js" } as any, fauxMonaco, {
       versionMajorMinor: "4.9",
@@ -47,6 +46,19 @@ describe(getCompilerOptionsFromParams, () => {
         "target": 6,
       }
     `)
+  })
+
+  it("maps string compiler options to enum values", () => {
+    const params = new URLSearchParams("?target=esnext&module=commonjs&strict=false")
+    const defaults = getDefaultSandboxCompilerOptions({ filetype: "js" } as any, fauxMonaco, {
+      versionMajorMinor: "4.9",
+    })
+
+    expect(getCompilerOptionsFromParams(defaults, ts, params)).toEqual({
+      target: ts.ScriptTarget.ESNext,
+      module: ts.ModuleKind.CommonJS,
+      strict: false,
+    })
   })
 
   it("handles settings options which haven't been given defaults in the monaco defaults", () => {
