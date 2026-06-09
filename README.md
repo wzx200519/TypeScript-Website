@@ -195,3 +195,30 @@ Privacy information can be found at https://privacy.microsoft.com/en-us/
 
 Microsoft and any contributors reserve all other rights, whether under their respective copyrights, patents,
 or trademarks, whether by implication, estoppel or otherwise.
+
+## 贡献指南
+
+本地开发可按以下步骤进行：
+
+```sh
+npm install
+```
+
+安装 Watchman，Windows 用户可执行：
+
+```sh
+choco install watchman
+```
+
+```sh
+npm run build
+```
+
+```sh
+npm test
+```
+
+```sh
+npm run lint
+npm run format
+```
