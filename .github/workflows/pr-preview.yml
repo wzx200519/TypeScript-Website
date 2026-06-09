@@ -1,0 +1,220 @@
+name: PR Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [v2]
+
+concurrency:
+  group: pr-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  detect-changes:
+    name: Detect affected packages
+    runs-on: ubuntu-latest
+    outputs:
+      affected-packages: ${{ steps.detect.outputs.affected-packages }}
+      site-changed: ${{ steps.detect.outputs.site-changed }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20.x"
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
+
+      - run: pnpm install
+
+      - name: Validate changesets
+        run: |
+          PR_CHANGESETS=$(ls .changeset | (grep -v -E 'README\.md|config\.json' || true) | wc -l)
+          MAIN_CHANGESETS=$(git ls-tree -r origin/v2 .changeset | (grep -v -E 'README\.md|config\.json' || true) | wc -l)
+          if [[ $PR_CHANGESETS -eq 0 && $MAIN_CHANGESETS -gt 0 ]]; then
+            echo "Versioning PR detected, skipping changeset status check"
+          else
+            pnpm changeset status --since=origin/v2
+          fi
+
+      - name: Detect affected packages
+        id: detect
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/v2...HEAD)
+          AFFECTED=""
+          SITE_CHANGED="false"
+
+          for pkg in packages/*/; do
+            pkg_name=$(basename "$pkg")
+            if echo "$CHANGED_FILES" | grep -q "^$pkg"; then
+              AFFECTED="${AFFECTED:+$AFFECTED,}$pkg_name"
+            fi
+          done
+
+          if echo "$CHANGED_FILES" | grep -qE "^(pnpm-workspace\.yaml|package\.json|pnpm-lock\.yaml|\.changeset/|patches/)"; then
+            AFFECTED="all"
+            SITE_CHANGED="true"
+          fi
+
+          if echo "$AFFECTED" | grep -qE "(typescriptlang-org|playground|sandbox|ts-twoslasher|typescript-vfs)"; then
+            SITE_CHANGED="true"
+          fi
+
+          if [ -z "$AFFECTED" ]; then
+            AFFECTED="none"
+          fi
+
+          echo "affected-packages=$AFFECTED" >> "$GITHUB_OUTPUT"
+          echo "site-changed=$SITE_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "::notice::Affected packages: $AFFECTED | Site needs rebuild: $SITE_CHANGED"
+
+  lint:
+    name: Lint
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20.x"
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
+      - run: pnpm install
+      - name: Prettier check
+        run: npx prettier --check .
+
+  type-check:
+    name: Type Check
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20.x"
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
+      - run: pnpm install
+      - run: pnpm bootstrap
+      - name: Type check typescriptlang-org
+        run: pnpm compile
+
+  test:
+    name: Test
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20.x"
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
+      - run: pnpm install
+      - run: pnpm docs-sync pull microsoft/TypeScript-Website-localizations#main 1
+      - run: pnpm bootstrap
+      - run: pnpm test
+      - name: Check for uncommitted changes
+        id: check-diff
+        run: |
+          git add .
+          if ! git diff --staged --exit-code --quiet; then
+            echo "This PR is missing some generated changes."
+            git diff --staged
+            git diff --staged > missing.patch
+            exit 1
+          fi
+      - name: Upload diff artifact
+        if: ${{ failure() && steps.check-diff.conclusion == 'failure' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: missing.patch
+          path: missing.patch
+
+  build-and-deploy:
+    name: Build & Deploy Preview
+    needs: [detect-changes, lint, type-check, test]
+    if: >-
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      needs.lint.result != 'failure' &&
+      needs.type-check.result != 'failure' &&
+      needs.test.result != 'failure' &&
+      needs.detect-changes.outputs.site-changed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pr-preview
+      url: https://pr-${{ github.event.pull_request.number }}.typescriptlang.org
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "20.x"
+      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
+
+      - run: pnpm install
+      - run: pnpm docs-sync pull microsoft/TypeScript-Website-localizations#main 1
+      - run: pnpm bootstrap
+      - run: pnpm build
+      - run: pnpm run --filter=typescriptlang-org setup-playground-cache-bust
+      - run: pnpm build-site
+
+      - name: Deploy to Azure Static Web Apps
+        id: deploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PREVIEW }}
+          action: "upload"
+          app_location: "packages/typescriptlang-org/public"
+          skip_app_build: true
+          production_branch: v2
+          deployment_environment: "pr-${{ github.event.pull_request.number }}"
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SITE_URL: ${{ steps.deploy.outputs.static_web_app_url }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prefix = "## 🚀 Preview Deployment";
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: +process.env.PR_NUMBER,
+              per_page: 100,
+            });
+
+            for (const comment of comments) {
+              if (comment.user?.login === "github-actions[bot]" && comment.body?.startsWith(prefix)) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: comment.id,
+                });
+              }
+            }
+
+            const body = [
+              prefix,
+              "",
+              `**Preview URL:** ${process.env.SITE_URL}`,
+              "",
+              `> Deployed from commit \`${context.sha.substring(0, 7)}\``,
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: +process.env.PR_NUMBER,
+              body,
+            });
