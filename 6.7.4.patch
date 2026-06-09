@@ -1,0 +1,178 @@
+diff --git a/.github/workflows/deploy-preview-website.yml b/.github/workflows/deploy-preview-website.yml
+new file mode 100644
+index 00000000..bc07c9a4
+--- /dev/null
++++ b/.github/workflows/deploy-preview-website.yml
+@@ -0,0 +1,168 @@
++name: PR Preview Deploy
++
++on:
++  pull_request:
++    branches:
++      - v2
++
++permissions:
++  contents: read
++  pull-requests: write
++  actions: read
++
++concurrency:
++  group: pr-preview-${{ github.event.pull_request.number }}
++  cancel-in-progress: true
++
++jobs:
++  detect-changes:
++    name: Detect affected packages
++    runs-on: ubuntu-latest
++    outputs:
++      changed-packages: ${{ steps.changes.outputs.packages }}
++    steps:
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++        with:
++          fetch-depth: 0
++
++      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
++        with:
++          node-version: "20.x"
++
++      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
++
++      - run: pnpm install
++
++      - name: Check changesets
++        run: |
++          pnpm changeset status --since="origin/${{ github.base_ref }}"
++
++      - name: Detect changed packages
++        id: changes
++        run: |
++          CHANGED_PKGS=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- packages/ \
++            | cut -d'/' -f2 \
++            | sort -u \
++            | jq -R -s -c 'split("\n") | map(select(length > 0))')
++          echo "packages=${CHANGED_PKGS}" >> "$GITHUB_OUTPUT"
++          echo "Changed packages: ${CHANGED_PKGS}"
++
++  lint:
++    name: Lint
++    needs: detect-changes
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++
++      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
++        with:
++          node-version: "20.x"
++
++      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
++
++      - run: pnpm install
++      - run: pnpm -r --if-present run lint
++
++  type-check:
++    name: Type check
++    needs: detect-changes
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++
++      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
++        with:
++          node-version: "20.x"
++
++      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
++
++      - run: pnpm install
++      - run: pnpm compile
++
++  test:
++    name: Test
++    needs: detect-changes
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++
++      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
++        with:
++          node-version: "20.x"
++
++      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
++
++      - run: pnpm install
++      - run: pnpm test
++
++  build-and-deploy:
++    name: Build and deploy preview
++    needs: [lint, type-check, test]
++    if: github.repository == 'microsoft/TypeScript-Website'
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++        with:
++          fetch-depth: 0
++
++      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
++        with:
++          node-version: "20.x"
++
++      - uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e # v6.0.3
++
++      - name: Build website
++        run: |
++          pnpm install
++          pnpm docs-sync pull microsoft/TypeScript-Website-localizations#main 1
++          pnpm bootstrap
++          pnpm build
++          pnpm build-site
++
++      - name: Deploy to Azure Static Web Apps
++        id: deploy
++        uses: Azure/static-web-apps-deploy@v1
++        with:
++          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PREVIEW }}
++          action: "upload"
++          app_location: "packages/typescriptlang-org/public"
++          skip_app_build: true
++          production_branch: v2
++          deployment_environment: ${{ github.event.pull_request.number }}
++
++      - name: Comment preview URL on PR
++        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
++        env:
++          PR_NUMBER: ${{ github.event.pull_request.number }}
++          SITE_URL: ${{ steps.deploy.outputs.static_web_app_url }}
++        with:
++          github-token: ${{ secrets.GITHUB_TOKEN }}
++          script: |
++            const prefix = "Azure Static Web Apps: Your stage site is ready!";
++            const siteUrl = process.env.SITE_URL;
++            const prNumber = +process.env.PR_NUMBER;
++
++            const { data: comments } = await github.rest.issues.listComments({
++              owner: context.repo.owner,
++              repo: context.repo.repo,
++              issue_number: prNumber,
++              per_page: 100,
++            });
++
++            for (const comment of comments) {
++              if (comment.user?.login === "github-actions[bot]" && comment.body?.startsWith(prefix)) {
++                console.log(`Deleting previous preview comment ${comment.id}`);
++                await github.rest.issues.deleteComment({
++                  owner: context.repo.owner,
++                  repo: context.repo.repo,
++                  comment_id: comment.id,
++                });
++              }
++            }
++
++            await github.rest.issues.createComment({
++              owner: context.repo.owner,
++              repo: context.repo.repo,
++              issue_number: prNumber,
++              body: `${prefix} Visit it here: ${siteUrl}`
++            });
+\ No newline at end of file
+diff --git a/6.7.4.patch b/6.7.4.patch
+new file mode 100644
+index 00000000..e69de29b
