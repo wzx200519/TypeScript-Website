@@ -195,3 +195,28 @@ Privacy information can be found at https://privacy.microsoft.com/en-us/
 
 Microsoft and any contributors reserve all other rights, whether under their respective copyrights, patents,
 or trademarks, whether by implication, estoppel or otherwise.
+
+## 贡献指南
+
+1. 克隆仓库后运行 `npm install` 安装依赖：
+   ```bash
+   npm install
+   ```
+2. 安装 Watchman（Windows 用户使用 `choco install watchman`）：
+   ```bash
+   choco install watchman
+   ```
+3. 运行 `npm run build` 构建项目：
+   ```bash
+   npm run build
+   ```
+4. 运行 `npm test` 执行测试：
+   ```bash
+   npm test
+   ```
+5. 提交前运行 `npm run lint` 和 `npm run format` 进行代码检查与格式化：
+   ```bash
+   npm run lint
+   npm run format
+   ```
+
