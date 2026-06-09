@@ -1,12 +1,9 @@
-import React, { useEffect, useState } from "react"
+import React, { useRef } from "react"
 import { graphql } from "gatsby"
 import { Layout } from "../components/layout"
 import { Sidebar, SidebarToggleButton } from "../components/layout/Sidebar"
 import { getDocumentationNavForLanguage } from "../lib/documentationNavigation"
 import { Intl } from "../components/Intl"
-
-// This dependency is used in gatsby-remark-autolink-headers to generate the slugs
-import slugger from "github-slugger"
 
 import "./documentation.scss"
 import "./markdown.scss"
@@ -17,78 +14,89 @@ import { useIntl } from "react-intl"
 import { createIntlLink } from "../components/IntlLink"
 import { handbookCopy } from "../copy/en/handbook"
 import { Contributors } from "../components/handbook/Contributors"
-import { overrideSubNavLinksWithSmoothScroll, updateSidebarOnScroll } from "./scripts/setupSubNavigationSidebar"
-import { setupLikeDislikeButtons } from "./scripts/setupLikeDislikeButtons"
 import { DislikeUnfilledSVG, LikeUnfilledSVG } from "../components/svgs/documentation"
 import Helmet from "react-helmet"
+import { useDocumentationPage } from "./hooks/useDocumentationPage"
+import { useTableOfContents } from "./hooks/useTableOfContents"
+import { useTwoslashHighlight } from "./hooks/useTwoslashHighlight"
+import {
+  DocumentationPageContext,
+  DocumentationRenderablePost,
+  TableOfContentsItem,
+} from "./utils/documentationPage"
 
 type Props = {
-  pageContext: {
-    // This is only set up if it's in the handbook nav
-    id: string | undefined
-    nextID: string
-    previousID: string
-    repoPath: string
-    slug: string
-    lang: string
-    modifiedTime: string
-  }
+  pageContext: DocumentationPageContext
   data: GatsbyTypes.GetDocumentBySlugQuery
   path: string
 }
 
-const HandbookTemplate: React.FC<Props> = (props) => {
+type DocumentationNoticeProps = {
+  title: string
+  description: React.ReactNode
+  action?: React.ReactNode
+}
+
+const DocumentationNotice = ({ title, description, action }: DocumentationNoticeProps) => {
+  return (
+    <div id="deprecated-header">
+      <div id="deprecated-content">
+        <div id="deprecated-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="7.5" stroke="black" /><path d="M8 3V9" stroke="black" /><path d="M8 11L8 13" stroke="black" /></svg>
+        </div>
+        <div>
+          <h3>{title}</h3>
+          <p>{description}</p>
+        </div>
+      </div>
+      {action && <div id="deprecated-action">{action}</div>}
+    </div>
+  )
+}
+
+const TableOfContentsTree = (props: { items: TableOfContentsItem[]; className?: string }) => {
+  return (
+    <ul className={props.className}>
+      {props.items.map(item => (
+        <li key={item.id}>
+          <a href={"#" + item.id}>{item.value}</a>
+          {item.children.length ? <TableOfContentsTree items={item.children} /> : null}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+const HandbookTemplate: React.FC<Props> = props => {
   const post = props.data.markdownRemark
   if (!post) {
     console.log("Could not render:", JSON.stringify(props))
     return <div></div>
   }
 
-  const [deprecationURL, setDeprecationURL] = useState(post.frontmatter!.deprecated_by)
-
-  const i = createInternational<typeof handbookCopy>(useIntl())
-  const IntlLink = createIntlLink(props.pageContext.lang)
-
-  useEffect(() => {
-    if (document.location.hash) {
-      const redirects = post.frontmatter?.deprecation_redirects || []
-      const indexOfHash = redirects.indexOf(document.location.hash.slice(1))
-      if (indexOfHash !== -1) {
-        setDeprecationURL(redirects[indexOfHash + 1])
-      }
-    }
-
-    overrideSubNavLinksWithSmoothScroll()
-
-    // Handles setting the scroll 
-    window.addEventListener("scroll", updateSidebarOnScroll, { passive: true, capture: true });
-    // Sets current selection
-    updateSidebarOnScroll()
-
-    setupLikeDislikeButtons(props.pageContext.slug, i)
-
-
-    return () => {
-      window.removeEventListener("scroll", updateSidebarOnScroll)
-    }
-  }, [])
-
-
   if (!post.frontmatter) throw new Error(`No front-matter found for the file with props: ${props}`)
   if (!post.html) throw new Error(`No html found for the file with props: ${props}`)
 
-  const selectedID = props.pageContext.id || "NO-ID"
-  const sidebarHeaders = post.headings?.filter(h => (h?.depth || 0) <= 3) || []
-  const showSidebar = !post.frontmatter.disable_toc
-  const showExperimental = post.frontmatter.experimental
+  const renderablePost = post as DocumentationRenderablePost
+  const i = createInternational<typeof handbookCopy>(useIntl())
+  const IntlLink = createIntlLink(props.pageContext.lang)
   const navigation = getDocumentationNavForLanguage(props.pageContext.lang)
-  const isHandbook = post.frontmatter.handbook
-  const prefix = isHandbook ? "Handbook" : "Documentation"
+  const markdownRef = useRef<HTMLDivElement>(null)
 
-  const slug = slugger()
+  const { deprecationURL, description, prefix, selectedID, showExperimental, title } = useDocumentationPage(
+    renderablePost,
+    props.pageContext,
+    i as any
+  )
+  const { items: tableOfContentsItems, showTableOfContents } = useTableOfContents(
+    renderablePost.headings as any,
+    renderablePost.frontmatter.disable_toc
+  )
+  const { markdownHtml } = useTwoslashHighlight(markdownRef, renderablePost.html)
+
   return (
-    <Layout title={`${prefix} - ${post.frontmatter.title}`} description={post.frontmatter.oneline || ""} lang={props.pageContext.lang} skipToAnchor="#handbook-content">
-      <section id="doc-layout" >
+    <Layout title={`${prefix} - ${title}`} description={description} lang={props.pageContext.lang} skipToAnchor="#handbook-content">
+      <section id="doc-layout">
         <SidebarToggleButton />
 
         <div className="page-popup" id="page-helpful-popup" role="status" aria-live="polite" style={{ opacity: 0, display: "none" }}>
@@ -100,7 +108,6 @@ const HandbookTemplate: React.FC<Props> = (props) => {
         </div>
 
         <noscript>
-          {/* Open by default so that folks without JS get a fully open sidebar */}
           <style dangerouslySetInnerHTML={{
             __html: `
           nav#sidebar > ul > li.closed ul {
@@ -114,53 +121,34 @@ const HandbookTemplate: React.FC<Props> = (props) => {
           {deprecationURL &&
             <>
               <Helmet>
-                <link rel="canonical" href={`https://www.typescriptlang.org${post.frontmatter.deprecated_by}`} />
+                <link rel="canonical" href={`https://www.typescriptlang.org${renderablePost.frontmatter.deprecated_by}`} />
               </Helmet>
-              <div id="deprecated-header">
-                <div id="deprecated-content">
-                  <div id="deprecated-icon">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="7.5" stroke="black" /><path d="M8 3V9" stroke="black" /><path d="M8 11L8 13" stroke="black" /></svg>
-                  </div>
-                  <div>
-                    <h3>{i("handb_deprecated_title")}</h3>
-                    <p>{i("handb_deprecated_subtitle")}<IntlLink className="deprecation-redirect-link" to={deprecationURL}>{i("handb_deprecated_subtitle_link")}</IntlLink></p>
-                  </div>
-                </div>
-                <div id="deprecated-action">
-                  <IntlLink className="deprecation-redirect-link" to={deprecationURL}>{i("handb_deprecated_subtitle_action")}</IntlLink>
-                </div>
-              </div>
+              <DocumentationNotice
+                title={i("handb_deprecated_title")}
+                description={<>{i("handb_deprecated_subtitle")}<IntlLink className="deprecation-redirect-link" to={deprecationURL}>{i("handb_deprecated_subtitle_link")}</IntlLink></>}
+                action={<IntlLink className="deprecation-redirect-link" to={deprecationURL}>{i("handb_deprecated_subtitle_action")}</IntlLink>}
+              />
             </>
           }
 
           {showExperimental &&
-            <div id="deprecated-header">
-              <div id="deprecated-content">
-                <div id="deprecated-icon">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="8" cy="8" r="7.5" stroke="black" /><path d="M8 3V9" stroke="black" /><path d="M8 11L8 13" stroke="black" /></svg>
-                </div>
-                <div>
-                  <h3>{i("handb_experimental_title")}</h3>
-                  <p>{i("handb_experimental_subtitle")}</p>
-                </div>
-              </div>
-            </div>
+            <DocumentationNotice
+              title={i("handb_experimental_title")}
+              description={i("handb_experimental_subtitle")}
+            />
           }
 
-          <h1>{post.frontmatter.title}</h1>
-          {post.frontmatter.preamble && <div className="preamble" dangerouslySetInnerHTML={{ __html: post.frontmatter.preamble }} />}
+          <h1>{title}</h1>
+          {renderablePost.frontmatter.preamble && <div className="preamble" dangerouslySetInnerHTML={{ __html: renderablePost.frontmatter.preamble }} />}
           <article>
             <div className="whitespace raised">
-              <div className="markdown" dangerouslySetInnerHTML={{ __html: post.html! }} />
+              <div ref={markdownRef} className="markdown" dangerouslySetInnerHTML={{ __html: markdownHtml }} />
             </div>
-            {showSidebar &&
+            {showTableOfContents &&
               <aside className="handbook-toc">
                 <nav className={deprecationURL ? "deprecated" : ""} aria-label="table of contents">
-                  {<>
-                    <h5>{i("handb_on_this_page")}</h5>
-                    <MarkdownHeadingTree tree={headerListToTree(sidebarHeaders)} className="handbook-on-this-page-section-list" slug={slug} />
-                  </>
-                  }
+                  <h5>{i("handb_on_this_page")}</h5>
+                  <TableOfContentsTree items={tableOfContentsItems} className="handbook-on-this-page-section-list" />
                   <div id="like-dislike-subnav" role="status" aria-live="polite">
                     <h5>{i("handb_like_dislike_title")}</h5>
                     <div>
@@ -168,7 +156,6 @@ const HandbookTemplate: React.FC<Props> = (props) => {
                       <button title="Dislike this page" id="dislike-button"><DislikeUnfilledSVG /> {i("handb_dislike_desc")}</button>
                     </div>
                   </div>
-
                 </nav>
               </aside>
             }
@@ -180,60 +167,6 @@ const HandbookTemplate: React.FC<Props> = (props) => {
       </section>
     </Layout>
   )
-}
-
-type MarkdownHeadingTreeNode = {
-  value: string
-  depth: number
-  children?: MarkdownHeadingTreeNode[]
-}
-
-function headerListToTree(sidebarHeaders: GatsbyTypes.Maybe<Pick<GatsbyTypes.MarkdownHeading, "value" | "depth">>[]) {
-  const tree: MarkdownHeadingTreeNode[] = []
-  const stack: { node: MarkdownHeadingTreeNode; depth: number }[] = []
-
-  sidebarHeaders.forEach(header => {
-    const value = header?.value!;
-    const depth = header?.depth!;
-    const newNode: MarkdownHeadingTreeNode = {
-      value,
-      depth
-    }
-
-    while (stack.length > 0 && stack[stack.length - 1].depth >= depth) {
-      stack.pop()
-    }
-
-    if (stack.length === 0) {
-      tree.push(newNode)
-    } else {
-      const topNode = stack[stack.length - 1].node;
-      if (!topNode.children) {
-        topNode.children = [];
-      }
-      topNode.children.push(newNode);
-    }
-
-    stack.push({ node: newNode, depth })
-  })
-
-  return tree
-}
-
-function MarkdownHeadingTree(props: { tree: MarkdownHeadingTreeNode[], slug: typeof slugger, className?: string }) {
-  return <ul className={props.className}>
-      {
-        props.tree.map(heading => {
-          const id = props.slug.slug(heading.value, false)
-          return (
-            <li key={id}>
-              <a href={'#' + id}>{heading.value}</a>
-              {heading.children?.length ? <MarkdownHeadingTree tree={heading.children} slug={props.slug} /> : null}
-            </li>
-          )
-        })
-      }
-    </ul>
 }
 
 export default (props: Props) => <Intl locale={props.pageContext.lang}><HandbookTemplate {...props} /></Intl>
