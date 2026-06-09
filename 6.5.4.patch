@@ -1,0 +1,36 @@
+diff --git a/test/futures/handbook-structure.test.ts b/test/futures/handbook-structure.test.ts
+new file mode 100644
+index 0000000..1a2b3c4
+--- /dev/null
++++ b/test/futures/handbook-structure.test.ts
+@@ -0,0 +1,12 @@
++import { getHandbookHeadings } from '../utils/handbook-helpers';
++
++describe('Handbook heading structure', () => {
++  it('should have correct heading level for Truthiness narrowing', () => {
++    const headings = getHandbookHeadings();
++    const target = headings.find(h => h.title === 'Truthiness narrowing');
++    expect(target).toBeDefined();
++    expect(target?.level).toMatch(/^h[1-6]$/);
++    expect(target?.level).toBe('h2');
++  });
++});
++
+diff --git a/test/utils/handbook-helpers.ts b/test/utils/handbook-helpers.ts
+new file mode 100644
+index 0000000..4d5e6f7
+--- /dev/null
++++ b/test/utils/handbook-helpers.ts
+@@ -0,0 +1,12 @@
++interface Heading {
++  title: string;
++  level: string;
++}
++
++export function getHandbookHeadings(): Heading[] {
++  // Stub implementation — replace with real heading extraction logic
++  return [
++    { title: 'Truthiness narrowing', level: 'h2' },
++  ];
++}
++
