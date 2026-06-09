@@ -1,0 +1,165 @@
+diff --git a/packages/typescriptlang-org/src/templates/documentation.tsx b/packages/typescriptlang-org/src/templates/documentation.tsx
+index aeddecaa..4947b2cc 100644
+--- a/packages/typescriptlang-org/src/templates/documentation.tsx
++++ b/packages/typescriptlang-org/src/templates/documentation.tsx
+@@ -1,4 +1,4 @@
+-import React, { useEffect, useState } from "react"
++import React, { useEffect, useRef } from "react"
+ import { graphql } from "gatsby"
+ import { Layout } from "../components/layout"
+ import { Sidebar, SidebarToggleButton } from "../components/layout/Sidebar"
+@@ -22,6 +22,12 @@ import { setupLikeDislikeButtons } from "./scripts/setupLikeDislikeButtons"
+ import { DislikeUnfilledSVG, LikeUnfilledSVG } from "../components/svgs/documentation"
+ import Helmet from "react-helmet"
+ 
++// Hooks
++import { useTableOfContents, MarkdownHeadingTreeNode } from "./hooks/useTableOfContents"
++import { useHandbookFrontmatter } from "./hooks/useHandbookFrontmatter"
++import { useTwoslashHighlight } from "./hooks/useTwoslashHighlight"
++import { useResponsiveImages } from "./hooks/useResponsiveImages"
++
+ type Props = {
+   pageContext: {
+     // This is only set up if it's in the handbook nav
+@@ -39,25 +45,25 @@ type Props = {
+ 
+ const HandbookTemplate: React.FC<Props> = (props) => {
+   const post = props.data.markdownRemark
++  const contentRef = useRef<HTMLDivElement>(null)
++
+   if (!post) {
+     console.log("Could not render:", JSON.stringify(props))
+     return <div></div>
+   }
+ 
+-  const [deprecationURL, setDeprecationURL] = useState(post.frontmatter!.deprecated_by)
++  const { deprecationURL, showSidebar, showExperimental, isHandbook, title, preamble, oneline } = useHandbookFrontmatter(post.frontmatter as any)
++
++  const sidebarHeaders = post.headings?.filter(h => (h?.depth || 0) <= 3) || []
++  const tocTree = useTableOfContents(sidebarHeaders as any)
++
++  useTwoslashHighlight(contentRef)
++  useResponsiveImages(contentRef)
+ 
+   const i = createInternational<typeof handbookCopy>(useIntl())
+   const IntlLink = createIntlLink(props.pageContext.lang)
+ 
+   useEffect(() => {
+-    if (document.location.hash) {
+-      const redirects = post.frontmatter?.deprecation_redirects || []
+-      const indexOfHash = redirects.indexOf(document.location.hash.slice(1))
+-      if (indexOfHash !== -1) {
+-        setDeprecationURL(redirects[indexOfHash + 1])
+-      }
+-    }
+-
+     overrideSubNavLinksWithSmoothScroll()
+ 
+     // Handles setting the scroll 
+@@ -67,27 +73,22 @@ const HandbookTemplate: React.FC<Props> = (props) => {
+ 
+     setupLikeDislikeButtons(props.pageContext.slug, i)
+ 
+-
+     return () => {
+       window.removeEventListener("scroll", updateSidebarOnScroll)
+     }
+-  }, [])
++  }, [props.pageContext.slug, i])
+ 
+ 
+   if (!post.frontmatter) throw new Error(`No front-matter found for the file with props: ${props}`)
+   if (!post.html) throw new Error(`No html found for the file with props: ${props}`)
+ 
+   const selectedID = props.pageContext.id || "NO-ID"
+-  const sidebarHeaders = post.headings?.filter(h => (h?.depth || 0) <= 3) || []
+-  const showSidebar = !post.frontmatter.disable_toc
+-  const showExperimental = post.frontmatter.experimental
+   const navigation = getDocumentationNavForLanguage(props.pageContext.lang)
+-  const isHandbook = post.frontmatter.handbook
+   const prefix = isHandbook ? "Handbook" : "Documentation"
+ 
+   const slug = slugger()
+   return (
+-    <Layout title={`${prefix} - ${post.frontmatter.title}`} description={post.frontmatter.oneline || ""} lang={props.pageContext.lang} skipToAnchor="#handbook-content">
++    <Layout title={`${prefix} - ${title}`} description={oneline || ""} lang={props.pageContext.lang} skipToAnchor="#handbook-content">
+       <section id="doc-layout" >
+         <SidebarToggleButton />
+ 
+@@ -147,18 +148,18 @@ const HandbookTemplate: React.FC<Props> = (props) => {
+             </div>
+           }
+ 
+-          <h1>{post.frontmatter.title}</h1>
+-          {post.frontmatter.preamble && <div className="preamble" dangerouslySetInnerHTML={{ __html: post.frontmatter.preamble }} />}
++          <h1>{title}</h1>
++          {preamble && <div className="preamble" dangerouslySetInnerHTML={{ __html: preamble }} />}
+           <article>
+             <div className="whitespace raised">
+-              <div className="markdown" dangerouslySetInnerHTML={{ __html: post.html! }} />
++              <div ref={contentRef} className="markdown" dangerouslySetInnerHTML={{ __html: post.html! }} />
+             </div>
+             {showSidebar &&
+               <aside className="handbook-toc">
+                 <nav className={deprecationURL ? "deprecated" : ""} aria-label="table of contents">
+                   {<>
+                     <h5>{i("handb_on_this_page")}</h5>
+-                    <MarkdownHeadingTree tree={headerListToTree(sidebarHeaders)} className="handbook-on-this-page-section-list" slug={slug} />
++                    <MarkdownHeadingTree tree={tocTree} className="handbook-on-this-page-section-list" slug={slug} />
+                   </>
+                   }
+                   <div id="like-dislike-subnav" role="status" aria-live="polite">
+@@ -182,51 +183,13 @@ const HandbookTemplate: React.FC<Props> = (props) => {
+   )
+ }
+ 
+-type MarkdownHeadingTreeNode = {
+-  value: string
+-  depth: number
+-  children?: MarkdownHeadingTreeNode[]
+-}
+-
+-function headerListToTree(sidebarHeaders: GatsbyTypes.Maybe<Pick<GatsbyTypes.MarkdownHeading, "value" | "depth">>[]) {
+-  const tree: MarkdownHeadingTreeNode[] = []
+-  const stack: { node: MarkdownHeadingTreeNode; depth: number }[] = []
+-
+-  sidebarHeaders.forEach(header => {
+-    const value = header?.value!;
+-    const depth = header?.depth!;
+-    const newNode: MarkdownHeadingTreeNode = {
+-      value,
+-      depth
+-    }
+-
+-    while (stack.length > 0 && stack[stack.length - 1].depth >= depth) {
+-      stack.pop()
+-    }
+-
+-    if (stack.length === 0) {
+-      tree.push(newNode)
+-    } else {
+-      const topNode = stack[stack.length - 1].node;
+-      if (!topNode.children) {
+-        topNode.children = [];
+-      }
+-      topNode.children.push(newNode);
+-    }
+-
+-    stack.push({ node: newNode, depth })
+-  })
+-
+-  return tree
+-}
+-
+ function MarkdownHeadingTree(props: { tree: MarkdownHeadingTreeNode[], slug: typeof slugger, className?: string }) {
+   return <ul className={props.className}>
+       {
+-        props.tree.map(heading => {
++        props.tree.map((heading, index) => {
+           const id = props.slug.slug(heading.value, false)
+           return (
+-            <li key={id}>
++            <li key={id + index}>
+               <a href={'#' + id}>{heading.value}</a>
+               {heading.children?.length ? <MarkdownHeadingTree tree={heading.children} slug={props.slug} /> : null}
+             </li>
