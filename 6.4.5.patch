@@ -1,0 +1,44 @@
+diff --git a/README.md b/README.md
+index 2fbe85f3..acd06e64 100644
+--- a/README.md
++++ b/README.md
+@@ -195,3 +195,39 @@ Privacy information can be found at https://privacy.microsoft.com/en-us/
+ 
+ Microsoft and any contributors reserve all other rights, whether under their respective copyrights, patents,
+ or trademarks, whether by implication, estoppel or otherwise.
++
++## 贡献指南
++
++克隆仓库后，请按照以下步骤进行本地开发：
++
++1. 安装依赖：
++
++```sh
++npm install
++```
++
++2. 安装 Watchman（Windows 用户使用以下命令）：
++
++```sh
++choco install watchman
++```
++
++3. 构建项目：
++
++```sh
++npm run build
++```
++
++4. 执行测试：
++
++```sh
++npm test
++```
++
++5. 提交前进行代码检查与格式化：
++
++```sh
++npm run lint
++npm run format
++```
++
