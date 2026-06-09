@@ -1,0 +1,1445 @@
+diff --git a/6.3.5.patch b/6.3.5.patch
+new file mode 100644
+index 00000000..e69de29b
+diff --git a/packages/typescriptlang-org/REFACTORING_README.md b/packages/typescriptlang-org/REFACTORING_README.md
+new file mode 100644
+index 00000000..7358b479
+--- /dev/null
++++ b/packages/typescriptlang-org/REFACTORING_README.md
+@@ -0,0 +1,241 @@
++# Documentation Markdown 渲染逻辑重构
++
++## 概述
++
++本次重构将原本耦合在 `documentation.tsx` 组件中的 Markdown 渲染逻辑拆分为独立的 hooks 和工具函数，提高了代码的可维护性和可复用性。
++
++## 重构内容
++
++### 1. 自定义 Hooks
++
++#### useTableOfContents
++**位置**: `src/hooks/useTableOfContents.ts`
++
++**功能**:
++- 处理文档目录（Table of Contents）的生成逻辑
++- 将扁平的标题列表转换为树形结构
++- 提供标题 slug 生成功能
++
++**API**:
++```typescript
++const tableOfContents = useTableOfContents(post.headings)
++// 返回: HeadingNode[] 树形结构的目录数据
++```
++
++**导出**:
++- `useTableOfContents` - 主 hook
++- `buildHeadingTree` - 构建标题树的工具函数
++- `useHeadingSlug` - 生成标题 slug 的 hook
++- `flattenHeadingTree` - 扁平化标题树的工具函数
++
++#### useTwoslashHighlight
++**位置**: `src/hooks/useTwoslashHighlight.ts`
++
++**功能**:
++- 处理 Twoslash 代码块的交互功能
++- 代码复制到剪贴板
++- 错误提示高亮
++- 悬停信息显示
++- Try 按钮功能（在 Playground 中打开代码）
++
++**API**:
++```typescript
++const {
++  copiedCode,
++  copyToClipboard,
++  setupCodeBlockInteractions,
++  highlightErrors,
++  setupHoverInfo,
++} = useTwoslashHighlight()
++```
++
++#### useScrollNavigation
++**位置**: `src/hooks/useScrollNavigation.ts`
++
++**功能**:
++- 处理滚动时的导航高亮
++- 实现平滑滚动
++- 自动更新当前活动链接
++
++**API**:
++```typescript
++const {
++  currentAnchor,
++  updateActiveLink,
++  setupSmoothScroll,
++} = useScrollNavigation({
++  offset: 100,
++  passive: true,
++})
++```
++
++#### useDeprecation
++**位置**: `src/hooks/useDeprecation.ts`
++
++**功能**:
++- 处理文档废弃警告
++- 管理废弃重定向逻辑
++- 根据 URL hash 处理特定重定向
++
++**API**:
++```typescript
++const deprecationInfo = useDeprecation(
++  frontmatter.deprecated_by,
++  frontmatter.deprecation_redirects
++)
++// 返回: { deprecatedBy, deprecationRedirects, shouldRedirect, redirectURL }
++```
++
++#### useLikeDislike
++**位置**: `src/hooks/useLikeDislike.ts`
++
++**功能**:
++- 处理页面喜欢/不喜欢按钮
++- 管理反馈状态
++- 处理滚动到底部时的弹窗显示
++
++**API**:
++```typescript
++const result = useLikeDislike(slug, intl)
++// 返回: { liked, disliked, feedback }
++```
++
++### 2. 工具函数
++
++#### markdownHelpers
++**位置**: `src/utils/markdownHelpers.ts`
++
++**功能**:
++- `renderMarkdownContent` - 渲染 Markdown 内容
++- `extractFrontmatter` - 提取并验证 frontmatter
++- `processPreamble` - 处理前言内容
++- `getDocumentPrefix` - 获取文档前缀（Handbook/Documentation）
++- `shouldShowTableOfContents` - 判断是否显示目录
++- `isExperimentalDocument` - 判断是否为实验性文档
++- `buildCanonicalURL` - 构建规范 URL
++
++### 3. 组件
++
++#### MarkdownHeadingTree
++**位置**: `src/components/MarkdownHeadingTree.tsx`
++
++**功能**:
++- 递归渲染标题树
++- 支持嵌套的目录结构
++- 自动生成锚点链接
++
++**使用示例**:
++```tsx
++<MarkdownHeadingTree
++  tree={tableOfContents}
++  className="handbook-on-this-page-section-list"
++/>
++```
++
++## 重构后的主组件
++
++重构后的主组件位于 `src/templates/documentation-refactored.tsx`，相比原组件有以下改进：
++
++### 改进点
++
++1. **关注点分离**: 每个功能模块都有独立的 hook 或工具函数
++2. **可测试性**: 各个 hook 和工具函数可以独立测试
++3. **可复用性**: hooks 可以在其他组件中复用
++4. **可维护性**: 代码结构清晰，易于理解和修改
++5. **类型安全**: 完整的 TypeScript 类型定义
++
++### 使用示例
++
++```tsx
++const HandbookTemplate: React.FC<Props> = (props) => {
++  // 提取 frontmatter
++  const frontmatter = extractFrontmatter(post.frontmatter)
++  
++  // 使用自定义 hooks
++  const deprecationInfo = useDeprecation(
++    frontmatter.deprecated_by,
++    frontmatter.deprecation_redirects
++  )
++  
++  const tableOfContents = useTableOfContents(post.headings)
++  const showSidebar = shouldShowTableOfContents(frontmatter.disable_toc)
++  
++  // 设置交互功能
++  useScrollNavigation({ offset: 100 })
++  useLikeDislike(props.pageContext.slug, i)
++  useTwoslashHighlight()
++  
++  // 渲染
++  return (
++    <Layout>
++      {/* ... */}
++      <MarkdownHeadingTree tree={tableOfContents} />
++      {/* ... */}
++    </Layout>
++  )
++}
++```
++
++## 文件结构
++
++```
++packages/typescriptlang-org/src/
++├── hooks/
++│   ├── index.ts                    # Hooks 导出索引
++│   ├── useTableOfContents.ts       # 目录生成 hook
++│   ├── useTwoslashHighlight.ts     # Twoslash 高亮 hook
++│   ├── useScrollNavigation.ts      # 滚动导航 hook
++│   ├── useDeprecation.ts           # 废弃处理 hook
++│   └── useLikeDislike.ts           # 喜欢/不喜欢 hook
++├── utils/
++│   ├── index.ts                    # 工具函数导出索引
++│   └── markdownHelpers.ts          # Markdown 辅助函数
++├── components/
++│   └── MarkdownHeadingTree.tsx     # 标题树组件
++└── templates/
++    ├── documentation.tsx           # 原始组件（保留）
++    └── documentation-refactored.tsx # 重构后的组件
++```
++
++## 迁移指南
++
++要从原始组件迁移到重构版本：
++
++1. 导入新的 hooks 和工具函数：
++```typescript
++import { useTableOfContents, useScrollNavigation, useDeprecation, useLikeDislike, useTwoslashHighlight } from "../hooks"
++import { MarkdownHeadingTree } from "../components/MarkdownHeadingTree"
++import { extractFrontmatter, getDocumentPrefix, shouldShowTableOfContents } from "../utils/markdownHelpers"
++```
++
++2. 替换原有的内联逻辑为 hook 调用
++
++3. 使用 `MarkdownHeadingTree` 组件替换原有的 `headerListToTree` 函数和 `MarkdownHeadingTree` 组件
++
++4. 测试所有功能确保无回归
++
++## 性能优化
++
++重构后的代码包含以下性能优化：
++
++1. **useMemo**: 在 `useTableOfContents` 中使用 `useMemo` 缓存目录树计算
++2. **useCallback**: 在各个 hooks 中使用 `useCallback` 缓存回调函数
++3. **事件清理**: 所有 hooks 都正确清理事件监听器，避免内存泄漏
++
++## 测试建议
++
++建议为以下内容编写单元测试：
++
++1. `buildHeadingTree` - 测试标题树的构建逻辑
++2. `useTableOfContents` - 测试目录生成
++3. `useDeprecation` - 测试废弃逻辑
++4. `markdownHelpers` - 测试各种辅助函数
++
++## 后续改进
++
++可能的后续改进方向：
++
++1. 为所有 hooks 添加单元测试
++2. 添加 Storybook 来展示各个组件
++3. 考虑将 `MarkdownHeadingTree` 组件虚拟化以处理大型文档
++4. 添加更多的配置选项到各个 hooks
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/components/MarkdownHeadingTree.tsx b/packages/typescriptlang-org/src/components/MarkdownHeadingTree.tsx
+new file mode 100644
+index 00000000..e9c88a4f
+--- /dev/null
++++ b/packages/typescriptlang-org/src/components/MarkdownHeadingTree.tsx
+@@ -0,0 +1,70 @@
++import React, { useMemo } from "react"
++import slugger from "github-slugger"
++import { HeadingNode } from "../hooks/useTableOfContents"
++
++interface MarkdownHeadingTreeProps {
++  tree: HeadingNode[]
++  className?: string
++}
++
++const HeadingTreeItem: React.FC<{
++  heading: HeadingNode
++  slug: ReturnType<typeof slugger>
++}> = ({ heading, slug }) => {
++  const id = slug.slug(heading.value, false)
++  return (
++    <li key={id}>
++      <a href={"#" + id}>{heading.value}</a>
++      {heading.children?.length ? (
++        <ul>
++          {heading.children.map((child) => (
++            <HeadingTreeItem key={child.value} heading={child} slug={slug} />
++          ))}
++        </ul>
++      ) : null}
++    </li>
++  )
++}
++
++export const MarkdownHeadingTree: React.FC<MarkdownHeadingTreeProps> = ({
++  tree,
++  className,
++}) => {
++  const slug = useMemo(() => slugger(), [])
++
++  return (
++    <ul className={className}>
++      {tree.map((heading) => (
++        <HeadingTreeItem key={heading.value} heading={heading} slug={slug} />
++      ))}
++    </ul>
++  )
++}
++
++interface SimpleHeadingListProps {
++  headings: Array<{ value?: string | null; depth?: number | null }>
++  maxDepth?: number
++}
++
++export const SimpleHeadingList: React.FC<SimpleHeadingListProps> = ({
++  headings,
++  maxDepth = 3,
++}) => {
++  const slug = slugger()
++  const filteredHeadings = headings.filter(
++    (h) => h.depth != null && h.depth <= maxDepth
++  )
++
++  return (
++    <ul>
++      {filteredHeadings.map((heading, index) => {
++        const id = slug.slug(heading.value || "", false)
++        return (
++          <li key={id || index}>
++            <a href={"#" + id}>{heading.value}</a>
++          </li>
++        )
++      })}
++    </ul>
++  )
++}
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/examples/usage-examples.tsx b/packages/typescriptlang-org/src/examples/usage-examples.tsx
+new file mode 100644
+index 00000000..148a6e78
+--- /dev/null
++++ b/packages/typescriptlang-org/src/examples/usage-examples.tsx
+@@ -0,0 +1,175 @@
++import React from 'react'
++import {
++  useTableOfContents,
++  useTwoslashHighlight,
++  useScrollNavigation,
++  useDeprecation,
++  useLikeDislike,
++} from '../hooks'
++import { MarkdownHeadingTree } from '../components/MarkdownHeadingTree'
++import {
++  extractFrontmatter,
++  getDocumentPrefix,
++  shouldShowTableOfContents,
++  isExperimentalDocument,
++  buildCanonicalURL,
++  processPreamble,
++} from '../utils/markdownHelpers'
++
++export const ExampleUsage: React.FC = () => {
++  const mockHeadings = [
++    { value: 'Introduction', depth: 1 },
++    { value: 'Getting Started', depth: 2 },
++    { value: 'Installation', depth: 3 },
++    { value: 'Configuration', depth: 3 },
++    { value: 'Advanced Topics', depth: 2 },
++  ]
++
++  const mockFrontmatter = {
++    title: 'Example Document',
++    disable_toc: false,
++    handbook: true,
++    experimental: false,
++    deprecated_by: '/new-docs',
++    deprecation_redirects: ['old-hash', 'new-hash'],
++    oneline: 'An example document',
++    preamble: '<p>This is a preamble</p>',
++  }
++
++  const tableOfContents = useTableOfContents(mockHeadings)
++  const deprecationInfo = useDeprecation(
++    mockFrontmatter.deprecated_by,
++    mockFrontmatter.deprecation_redirects
++  )
++
++  useScrollNavigation({ offset: 100 })
++  useTwoslashHighlight()
++
++  const showSidebar = shouldShowTableOfContents(mockFrontmatter.disable_toc)
++  const isExperimental = isExperimentalDocument(mockFrontmatter.experimental)
++  const prefix = getDocumentPrefix(mockFrontmatter.handbook)
++  const canonicalURL = buildCanonicalURL(mockFrontmatter.deprecated_by)
++  const preambleHTML = processPreamble(mockFrontmatter.preamble)
++
++  return (
++    <div>
++      <h1>{mockFrontmatter.title}</h1>
++      <p>Document Prefix: {prefix}</p>
++      <p>Show Sidebar: {showSidebar.toString()}</p>
++      <p>Is Experimental: {isExperimental.toString()}</p>
++      <p>Canonical URL: {canonicalURL}</p>
++
++      {deprecationInfo.shouldRedirect && (
++        <div className="deprecation-warning">
++          This document is deprecated. Redirect to: {deprecationInfo.redirectURL}
++        </div>
++      )}
++
++      {preambleHTML && (
++        <div className="preamble" dangerouslySetInnerHTML={preambleHTML} />
++      )}
++
++      {showSidebar && (
++        <aside>
++          <h3>Table of Contents</h3>
++          <MarkdownHeadingTree tree={tableOfContents} />
++        </aside>
++      )}
++    </div>
++  )
++}
++
++export const MinimalExample: React.FC = () => {
++  const headings = [
++    { value: 'Section 1', depth: 1 },
++    { value: 'Subsection 1.1', depth: 2 },
++    { value: 'Section 2', depth: 1 },
++  ]
++
++  const toc = useTableOfContents(headings)
++
++  return (
++    <nav>
++      <MarkdownHeadingTree tree={toc} className="toc-list" />
++    </nav>
++  )
++}
++
++export const TwoslashExample: React.FC = () => {
++  useTwoslashHighlight()
++
++  return (
++    <div>
++      <h2>Code Block with Twoslash</h2>
++      <pre>
++        <code className="language-typescript" data-language="typescript">
++          {`const greeting: string = "Hello, TypeScript!"
++console.log(greeting)`}
++        </code>
++      </pre>
++    </div>
++  )
++}
++
++export const ScrollNavigationExample: React.FC = () => {
++  useScrollNavigation({
++    offset: 150,
++    passive: true,
++  })
++
++  return (
++    <article>
++      <h2 id="section-1">Section 1</h2>
++      <p>Content for section 1...</p>
++
++      <h2 id="section-2">Section 2</h2>
++      <p>Content for section 2...</p>
++
++      <h2 id="section-3">Section 3</h2>
++      <p>Content for section 3...</p>
++    </article>
++  )
++}
++
++export const LikeDislikeExample: React.FC = () => {
++  const intl = (key: string) => {
++    const messages: Record<string, string> = {
++      handb_thanks: 'Thank you for your feedback!',
++      handb_like_desc: 'Like',
++      handb_dislike_desc: 'Dislike',
++    }
++    return messages[key] || key
++  }
++
++  const result = useLikeDislike('/example-page', intl)
++
++  return (
++    <div>
++      <h3>Was this page helpful?</h3>
++      <button id="like-button">👍 Like</button>
++      <button id="dislike-button">👎 Dislike</button>
++      {result.feedback && <p>{result.feedback}</p>}
++    </div>
++  )
++}
++
++export const DeprecationExample: React.FC = () => {
++  const deprecationInfo = useDeprecation(
++    '/new-documentation',
++    ['old-section', 'new-section']
++  )
++
++  return (
++    <div>
++      {deprecationInfo.shouldRedirect && (
++        <div className="deprecation-banner">
++          <h3>⚠️ Document Deprecated</h3>
++          <p>
++            This document has been moved. Please visit our new documentation at:{' '}
++            <a href={deprecationInfo.redirectURL!}>{deprecationInfo.redirectURL}</a>
++          </p>
++        </div>
++      )}
++    </div>
++  )
++}
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/hooks/index.ts b/packages/typescriptlang-org/src/hooks/index.ts
+new file mode 100644
+index 00000000..d5d8e88e
+--- /dev/null
++++ b/packages/typescriptlang-org/src/hooks/index.ts
+@@ -0,0 +1,14 @@
++export { useTableOfContents, buildHeadingTree, useHeadingSlug, flattenHeadingTree } from './useTableOfContents'
++export type { HeadingNode, TableOfContentsItem } from './useTableOfContents'
++
++export { useTwoslashHighlight } from './useTwoslashHighlight'
++export type { TwoslashCodeBlock } from './useTwoslashHighlight'
++
++export { useScrollNavigation } from './useScrollNavigation'
++export type { ScrollNavigationOptions } from './useScrollNavigation'
++
++export { useDeprecation } from './useDeprecation'
++export type { DeprecationInfo } from './useDeprecation'
++
++export { useLikeDislike } from './useLikeDislike'
++export type { LikeDislikeResult } from './useLikeDislike'
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/hooks/useDeprecation.ts b/packages/typescriptlang-org/src/hooks/useDeprecation.ts
+new file mode 100644
+index 00000000..30cae71f
+--- /dev/null
++++ b/packages/typescriptlang-org/src/hooks/useDeprecation.ts
+@@ -0,0 +1,34 @@
++import { useState, useEffect } from "react"
++
++export interface DeprecationInfo {
++  deprecatedBy: string | null
++  deprecationRedirects: readonly string[]
++  shouldRedirect: boolean
++  redirectURL: string | null
++}
++
++export function useDeprecation(
++  deprecatedBy: string | null | undefined,
++  deprecationRedirects: readonly string[] | null | undefined
++): DeprecationInfo {
++  const [redirectURL, setRedirectURL] = useState<string | null>(
++    deprecatedBy || null
++  )
++
++  useEffect(() => {
++    if (document.location.hash) {
++      const redirects = deprecationRedirects || []
++      const indexOfHash = redirects.indexOf(document.location.hash.slice(1))
++      if (indexOfHash !== -1) {
++        setRedirectURL(redirects[indexOfHash + 1])
++      }
++    }
++  }, [deprecationRedirects])
++
++  return {
++    deprecatedBy: deprecatedBy || null,
++    deprecationRedirects: deprecationRedirects || [],
++    shouldRedirect: !!redirectURL,
++    redirectURL,
++  }
++}
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/hooks/useLikeDislike.ts b/packages/typescriptlang-org/src/hooks/useLikeDislike.ts
+new file mode 100644
+index 00000000..b615dede
+--- /dev/null
++++ b/packages/typescriptlang-org/src/hooks/useLikeDislike.ts
+@@ -0,0 +1,111 @@
++import { useEffect, useCallback, useState } from "react"
++
++export interface LikeDislikeResult {
++  liked: boolean
++  disliked: boolean
++  feedback: string | null
++}
++
++export function useLikeDislike(
++  slug: string,
++  intl: (key: string) => string
++) {
++  const [result, setResult] = useState<LikeDislikeResult>({
++    liked: false,
++    disliked: false,
++    feedback: null,
++  })
++
++  const handleFeedback = useCallback(
++    (type: "like" | "dislike") => {
++      const message =
++        type === "like" ? intl("handb_thanks") : intl("handb_thanks")
++
++      setResult({
++        liked: type === "like",
++        disliked: type === "dislike",
++        feedback: message,
++      })
++
++      const textSectionNav = document.getElementById("like-dislike-subnav")
++      const popoverPopup = document.getElementById("page-helpful-popup")
++
++      if (textSectionNav) {
++        textSectionNav.innerHTML = `<h5>${message}</h5>`
++      }
++      if (popoverPopup) {
++        popoverPopup.innerHTML = `<p>${message}</p>`
++      }
++    },
++    [intl]
++  )
++
++  const setupButtons = useCallback(() => {
++    const likeButton = document.getElementById("like-button")
++    const dislikeButton = document.getElementById("dislike-button")
++    const likeButtonPopup = document.getElementById("like-button-popup")
++    const dislikeButtonPopup = document.getElementById("dislike-button-popup")
++
++    if (likeButton) {
++      likeButton.onclick = () => handleFeedback("like")
++    }
++    if (dislikeButton) {
++      dislikeButton.onclick = () => handleFeedback("dislike")
++    }
++    if (likeButtonPopup) {
++      likeButtonPopup.onclick = () => handleFeedback("like")
++    }
++    if (dislikeButtonPopup) {
++      dislikeButtonPopup.onclick = () => handleFeedback("dislike")
++    }
++  }, [handleFeedback])
++
++  const setupScrollPopup = useCallback(() => {
++    const handler = () => {
++      const body = document.body
++      const html = document.documentElement
++
++      const height = Math.max(
++        body.scrollHeight,
++        body.offsetHeight,
++        html.clientHeight,
++        html.scrollHeight,
++        html.offsetHeight
++      )
++
++      const y = Math.max(window.pageYOffset) + window.innerHeight
++      const footerH = document.getElementById("site-footer")?.clientHeight || 0
++      const bottomOfWindow = y > height - footerH + 150
++
++      const popup = document.getElementById("page-helpful-popup")
++      const nav = document.getElementById("like-dislike-subnav")
++
++      if (popup && nav) {
++        const popupOpacity = bottomOfWindow ? "1" : "0"
++        if (popup.style.opacity !== popupOpacity) {
++          popup.style.display = bottomOfWindow ? "block" : "none"
++          popup.style.opacity = popupOpacity
++        }
++
++        const navOpacity = bottomOfWindow ? "0" : "1"
++        if (nav.style.opacity !== navOpacity) {
++          nav.style.opacity = navOpacity
++        }
++      }
++    }
++
++    window.addEventListener("scroll", handler, { passive: true, capture: true })
++
++    return () => {
++      window.removeEventListener("scroll", handler, true)
++    }
++  }, [])
++
++  useEffect(() => {
++    setupButtons()
++    const cleanup = setupScrollPopup()
++    return cleanup
++  }, [setupButtons, setupScrollPopup])
++
++  return result
++}
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/hooks/useScrollNavigation.ts b/packages/typescriptlang-org/src/hooks/useScrollNavigation.ts
+new file mode 100644
+index 00000000..555824db
+--- /dev/null
++++ b/packages/typescriptlang-org/src/hooks/useScrollNavigation.ts
+@@ -0,0 +1,98 @@
++import { useEffect, useCallback, useRef } from "react"
++
++export interface ScrollNavigationOptions {
++  offset?: number
++  passive?: boolean
++}
++
++export function useScrollNavigation(options: ScrollNavigationOptions = {}) {
++  const { offset = 100, passive = true } = options
++  const currentAnchorRef = useRef<HTMLAnchorElement | null>(null)
++
++  const updateActiveLink = useCallback(() => {
++    const subnavLinks = document.querySelectorAll<HTMLAnchorElement>(
++      "#handbook-content nav ul li a"
++    )
++
++    const fromTop = window.scrollY
++    let currentPossibleAnchor: HTMLAnchorElement | undefined
++
++    subnavLinks.forEach((link) => {
++      try {
++        const section = document.querySelector<HTMLDivElement>(
++          decodeURIComponent(link.hash)
++        )
++        if (!section) {
++          return
++        }
++        const isBelow = section.offsetTop - offset <= fromTop
++        if (isBelow) currentPossibleAnchor = link
++      } catch (error) {
++        return
++      }
++    })
++
++    subnavLinks.forEach((link) => {
++      if (link === currentPossibleAnchor) {
++        link.classList.add("current")
++      } else {
++        link.classList.remove("current")
++      }
++    })
++
++    currentAnchorRef.current = currentPossibleAnchor || null
++  }, [offset])
++
++  const setupSmoothScroll = useCallback(() => {
++    const subnavLinks = document.querySelectorAll<HTMLAnchorElement>(
++      "#handbook-content nav ul li a"
++    )
++
++    const handlers: Array<{ link: HTMLAnchorElement; handler: EventListener }> = []
++
++    subnavLinks.forEach((link) => {
++      const handler = (event: Event) => {
++        event.preventDefault()
++
++        const hash = (event.target as HTMLAnchorElement).hash
++        const id = decodeURIComponent(hash).slice(1)
++        const target = document.querySelector(`[id="${id}"]`)
++
++        if (target) {
++          target.scrollIntoView({ behavior: "smooth", block: "start" })
++          document.location.hash = hash
++        }
++      }
++
++      link.addEventListener("click", handler)
++      handlers.push({ link, handler })
++    })
++
++    return () => {
++      handlers.forEach(({ link, handler }) => {
++        link.removeEventListener("click", handler)
++      })
++    }
++  }, [])
++
++  useEffect(() => {
++    const cleanup = setupSmoothScroll()
++
++    window.addEventListener("scroll", updateActiveLink, {
++      passive,
++      capture: true,
++    })
++    updateActiveLink()
++
++    return () => {
++      cleanup()
++      window.removeEventListener("scroll", updateActiveLink, true)
++    }
++  }, [setupSmoothScroll, updateActiveLink, passive])
++
++  return {
++    currentAnchor: currentAnchorRef.current,
++    updateActiveLink,
++    setupSmoothScroll,
++  }
++}
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/hooks/useTableOfContents.ts b/packages/typescriptlang-org/src/hooks/useTableOfContents.ts
+new file mode 100644
+index 00000000..350d102b
+--- /dev/null
++++ b/packages/typescriptlang-org/src/hooks/useTableOfContents.ts
+@@ -0,0 +1,93 @@
++import { useMemo } from "react"
++import slugger from "github-slugger"
++
++export type HeadingNode = {
++  value: string
++  depth: number
++  children?: HeadingNode[]
++}
++
++export type TableOfContentsItem = {
++  id: string
++  value: string
++  depth: number
++  children?: TableOfContentsItem[]
++}
++
++export function useTableOfContents(
++  headings: readonly ({ readonly value?: string | null; readonly depth?: number | null } | null)[] | null | undefined
++) {
++  return useMemo(() => {
++    if (!headings || headings.length === 0) {
++      return []
++    }
++
++    const filteredHeadings = headings.filter(
++      (h): h is { value: string; depth: number } =>
++        h != null && h.value != null && h.depth != null && h.depth <= 3
++    )
++
++    return buildHeadingTree(filteredHeadings)
++  }, [headings])
++}
++
++export function buildHeadingTree(
++  headings: Array<{ value: string; depth: number }>
++): HeadingNode[] {
++  const tree: HeadingNode[] = []
++  const stack: { node: HeadingNode; depth: number }[] = []
++
++  headings.forEach((heading) => {
++    const newNode: HeadingNode = {
++      value: heading.value,
++      depth: heading.depth,
++    }
++
++    while (stack.length > 0 && stack[stack.length - 1].depth >= heading.depth) {
++      stack.pop()
++    }
++
++    if (stack.length === 0) {
++      tree.push(newNode)
++    } else {
++      const topNode = stack[stack.length - 1].node
++      if (!topNode.children) {
++        topNode.children = []
++      }
++      topNode.children.push(newNode)
++    }
++
++    stack.push({ node: newNode, depth: heading.depth })
++  })
++
++  return tree
++}
++
++export function useHeadingSlug() {
++  return useMemo(() => {
++    const slug = slugger()
++    return (value: string) => slug.slug(value, false)
++  }, [])
++}
++
++export function flattenHeadingTree(tree: HeadingNode[]): TableOfContentsItem[] {
++  const result: TableOfContentsItem[] = []
++  const slug = slugger()
++
++  const traverse = (nodes: HeadingNode[]) => {
++    nodes.forEach((node) => {
++      const item: TableOfContentsItem = {
++        id: slug.slug(node.value, false),
++        value: node.value,
++        depth: node.depth,
++      }
++      if (node.children && node.children.length > 0) {
++        item.children = flattenHeadingTree(node.children)
++      }
++      result.push(item)
++    })
++  }
++
++  traverse(tree)
++  return result
++}
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/hooks/useTwoslashHighlight.ts b/packages/typescriptlang-org/src/hooks/useTwoslashHighlight.ts
+new file mode 100644
+index 00000000..9e90a1e9
+--- /dev/null
++++ b/packages/typescriptlang-org/src/hooks/useTwoslashHighlight.ts
+@@ -0,0 +1,166 @@
++import { useEffect, useCallback, useState } from "react"
++
++export interface TwoslashCodeBlock {
++  element: HTMLElement
++  code: string
++  language: string
++}
++
++export function useTwoslashHighlight() {
++  const [copiedCode, setCopiedCode] = useState<string | null>(null)
++
++  const copyToClipboard = useCallback(async (code: string) => {
++    try {
++      await navigator.clipboard.writeText(code)
++      setCopiedCode(code)
++      setTimeout(() => setCopiedCode(null), 2000)
++      return true
++    } catch (error) {
++      console.error("Failed to copy code:", error)
++      return false
++    }
++  }, [])
++
++  const setupCodeBlockInteractions = useCallback(() => {
++    const codeBlocks = document.querySelectorAll<HTMLElement>(
++      'pre code[data-language], pre.twoslash[data-language]'
++    )
++
++    codeBlocks.forEach((codeBlock) => {
++      const pre = codeBlock.closest('pre')
++      if (!pre) return
++
++      const copyButton = pre.querySelector('.copy-button') as HTMLButtonElement | null
++      if (copyButton && !copyButton.dataset.initialized) {
++        copyButton.dataset.initialized = 'true'
++        copyButton.addEventListener('click', async () => {
++          const code = codeBlock.textContent || ''
++          const success = await copyToClipboard(code)
++          if (success) {
++            const originalText = copyButton.textContent
++            copyButton.textContent = 'Copied!'
++            setTimeout(() => {
++              copyButton.textContent = originalText
++            }, 2000)
++          }
++        })
++      }
++
++      const tryButton = pre.querySelector('.try-button') as HTMLButtonElement | null
++      if (tryButton && !tryButton.dataset.initialized) {
++        tryButton.dataset.initialized = 'true'
++        tryButton.addEventListener('click', () => {
++          const code = codeBlock.textContent || ''
++          const playgroundUrl = `/play?code=${encodeURIComponent(code)}`
++          window.open(playgroundUrl, '_blank')
++        })
++      }
++    })
++  }, [copyToClipboard])
++
++  const highlightErrors = useCallback(() => {
++    const errorElements = document.querySelectorAll<HTMLElement>('.twoslash-error-line')
++    errorElements.forEach((element) => {
++      if (!element.dataset.errorHighlighted) {
++        element.dataset.errorHighlighted = 'true'
++        element.style.cursor = 'pointer'
++        element.addEventListener('mouseenter', () => {
++          const errorPopup = element.querySelector('.error-popup') as HTMLElement | null
++          if (errorPopup) {
++            errorPopup.style.display = 'block'
++          }
++        })
++        element.addEventListener('mouseleave', () => {
++          const errorPopup = element.querySelector('.error-popup') as HTMLElement | null
++          if (errorPopup) {
++            errorPopup.style.display = 'none'
++          }
++        })
++      }
++    })
++  }, [])
++
++  const setupHoverInfo = useCallback(() => {
++    const hoverTargets = document.querySelectorAll<HTMLElement>('[data-hover-info]')
++    hoverTargets.forEach((target) => {
++      if (!target.dataset.hoverInitialized) {
++        target.dataset.hoverInitialized = 'true'
++        target.style.cursor = 'pointer'
++        target.style.borderBottom = '1px dotted currentColor'
++        
++        target.addEventListener('mouseenter', (e) => {
++          const hoverInfo = target.getAttribute('data-hover-info')
++          if (hoverInfo) {
++            showTooltip(e as MouseEvent, hoverInfo, target)
++          }
++        })
++        
++        target.addEventListener('mouseleave', () => {
++          hideTooltip()
++        })
++      }
++    })
++  }, [])
++
++  useEffect(() => {
++    setupCodeBlockInteractions()
++    highlightErrors()
++    setupHoverInfo()
++  }, [setupCodeBlockInteractions, highlightErrors, setupHoverInfo])
++
++  return {
++    copiedCode,
++    copyToClipboard,
++    setupCodeBlockInteractions,
++    highlightErrors,
++    setupHoverInfo,
++  }
++}
++
++function showTooltip(event: MouseEvent, content: string, target: HTMLElement) {
++  hideTooltip()
++  
++  const tooltip = document.createElement('div')
++  tooltip.id = 'twoslash-tooltip'
++  tooltip.style.cssText = `
++    position: absolute;
++    background: #1e1e1e;
++    color: #d4d4d4;
++    padding: 8px 12px;
++    border-radius: 4px;
++    font-size: 13px;
++    font-family: 'Consolas', 'Monaco', monospace;
++    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
++    z-index: 10000;
++    max-width: 400px;
++    white-space: pre-wrap;
++    pointer-events: none;
++  `
++  tooltip.textContent = content
++  
++  document.body.appendChild(tooltip)
++  
++  const rect = target.getBoundingClientRect()
++  const tooltipRect = tooltip.getBoundingClientRect()
++  
++  let top = rect.top - tooltipRect.height - 8
++  let left = rect.left
++  
++  if (top < 0) {
++    top = rect.bottom + 8
++  }
++  
++  if (left + tooltipRect.width > window.innerWidth) {
++    left = window.innerWidth - tooltipRect.width - 8
++  }
++  
++  tooltip.style.top = `${top + window.scrollY}px`
++  tooltip.style.left = `${left}px`
++}
++
++function hideTooltip() {
++  const existing = document.getElementById('twoslash-tooltip')
++  if (existing) {
++    existing.remove()
++  }
++}
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/templates/documentation-refactored.tsx b/packages/typescriptlang-org/src/templates/documentation-refactored.tsx
+new file mode 100644
+index 00000000..56fb76da
+--- /dev/null
++++ b/packages/typescriptlang-org/src/templates/documentation-refactored.tsx
+@@ -0,0 +1,296 @@
++import React, { useEffect } from "react"
++import { graphql } from "gatsby"
++import { Layout } from "../components/layout"
++import { Sidebar, SidebarToggleButton } from "../components/layout/Sidebar"
++import { getDocumentationNavForLanguage } from "../lib/documentationNavigation"
++import { Intl } from "../components/Intl"
++
++import "./documentation.scss"
++import "./markdown.scss"
++
++import { NextPrev } from "../components/handbook/NextPrev"
++import { createInternational } from "../lib/createInternational"
++import { useIntl } from "react-intl"
++import { createIntlLink } from "../components/IntlLink"
++import { handbookCopy } from "../copy/en/handbook"
++import { Contributors } from "../components/handbook/Contributors"
++import { DislikeUnfilledSVG, LikeUnfilledSVG } from "../components/svgs/documentation"
++import Helmet from "react-helmet"
++
++import { useTableOfContents, useScrollNavigation, useDeprecation, useLikeDislike, useTwoslashHighlight } from "../hooks"
++import { MarkdownHeadingTree } from "../components/MarkdownHeadingTree"
++import {
++  extractFrontmatter,
++  getDocumentPrefix,
++  shouldShowTableOfContents,
++  isExperimentalDocument,
++  buildCanonicalURL,
++  processPreamble,
++} from "../utils/markdownHelpers"
++
++type Props = {
++  pageContext: {
++    id: string | undefined
++    nextID: string
++    previousID: string
++    repoPath: string
++    slug: string
++    lang: string
++    modifiedTime: string
++  }
++  data: GatsbyTypes.GetDocumentBySlugQuery
++  path: string
++}
++
++const HandbookTemplate: React.FC<Props> = (props) => {
++  const post = props.data.markdownRemark
++  if (!post) {
++    console.log("Could not render:", JSON.stringify(props))
++    return <div></div>
++  }
++
++  const frontmatter = extractFrontmatter<GatsbyTypes.MarkdownRemarkFrontmatter>(post.frontmatter)
++  if (!post.html) throw new Error(`No html found for the file with props: ${props}`)
++
++  const i = createInternational<typeof handbookCopy>(useIntl())
++  const IntlLink = createIntlLink(props.pageContext.lang)
++
++  const deprecationInfo = useDeprecation(
++    frontmatter.deprecated_by,
++    frontmatter.deprecation_redirects
++  )
++
++  const tableOfContents = useTableOfContents(post.headings)
++  const showSidebar = shouldShowTableOfContents(frontmatter.disable_toc)
++  const showExperimental = isExperimentalDocument(frontmatter.experimental)
++  const isHandbook = frontmatter.handbook
++  const prefix = getDocumentPrefix(isHandbook)
++  const canonicalURL = buildCanonicalURL(frontmatter.deprecated_by)
++  const preambleHTML = processPreamble(frontmatter.preamble)
++
++  useScrollNavigation({ offset: 100, passive: true })
++  useLikeDislike(props.pageContext.slug, i)
++  useTwoslashHighlight()
++
++  const selectedID = props.pageContext.id || "NO-ID"
++  const navigation = getDocumentationNavForLanguage(props.pageContext.lang)
++
++  return (
++    <Layout
++      title={`${prefix} - ${frontmatter.title}`}
++      description={frontmatter.oneline || ""}
++      lang={props.pageContext.lang}
++      skipToAnchor="#handbook-content"
++    >
++      <section id="doc-layout">
++        <SidebarToggleButton />
++
++        <div
++          className="page-popup"
++          id="page-helpful-popup"
++          role="status"
++          aria-live="polite"
++          style={{ opacity: 0, display: "none" }}
++        >
++          <p>Was this page helpful?</p>
++          <div>
++            <button className="first" id="like-button-popup" title="Like this page">
++              <LikeUnfilledSVG />
++            </button>
++            <button id="dislike-button-popup" title="Dislike this page">
++              <DislikeUnfilledSVG />
++            </button>
++          </div>
++        </div>
++
++        <noscript>
++          <style
++            dangerouslySetInnerHTML={{
++              __html: `
++          nav#sidebar > ul > li.closed ul {
++            display: block !important;
++           }
++        `,
++            }}
++          />
++        </noscript>
++
++        <Sidebar navItems={navigation} selectedID={selectedID} />
++        <div id="handbook-content" role="article">
++          {deprecationInfo.shouldRedirect && (
++            <>
++              <Helmet>
++                <link rel="canonical" href={canonicalURL!} />
++              </Helmet>
++              <div id="deprecated-header">
++                <div id="deprecated-content">
++                  <div id="deprecated-icon">
++                    <svg
++                      width="16"
++                      height="16"
++                      viewBox="0 0 16 16"
++                      fill="none"
++                      xmlns="http://www.w3.org/2000/svg"
++                    >
++                      <circle cx="8" cy="8" r="7.5" stroke="black" />
++                      <path d="M8 3V9" stroke="black" />
++                      <path d="M8 11L8 13" stroke="black" />
++                    </svg>
++                  </div>
++                  <div>
++                    <h3>{i("handb_deprecated_title")}</h3>
++                    <p>
++                      {i("handb_deprecated_subtitle")}
++                      <IntlLink
++                        className="deprecation-redirect-link"
++                        to={deprecationInfo.redirectURL!}
++                      >
++                        {i("handb_deprecated_subtitle_link")}
++                      </IntlLink>
++                    </p>
++                  </div>
++                </div>
++                <div id="deprecated-action">
++                  <IntlLink
++                    className="deprecation-redirect-link"
++                    to={deprecationInfo.redirectURL!}
++                  >
++                    {i("handb_deprecated_subtitle_action")}
++                  </IntlLink>
++                </div>
++              </div>
++            </>
++          )}
++
++          {showExperimental && (
++            <div id="deprecated-header">
++              <div id="deprecated-content">
++                <div id="deprecated-icon">
++                  <svg
++                    width="16"
++                    height="16"
++                    viewBox="0 0 16 16"
++                    fill="none"
++                    xmlns="http://www.w3.org/2000/svg"
++                  >
++                    <circle cx="8" cy="8" r="7.5" stroke="black" />
++                    <path d="M8 3V9" stroke="black" />
++                    <path d="M8 11L8 13" stroke="black" />
++                  </svg>
++                </div>
++                <div>
++                  <h3>{i("handb_experimental_title")}</h3>
++                  <p>{i("handb_experimental_subtitle")}</p>
++                </div>
++              </div>
++            </div>
++          )}
++
++          <h1>{frontmatter.title}</h1>
++          {preambleHTML && (
++            <div className="preamble" dangerouslySetInnerHTML={preambleHTML} />
++          )}
++          <article>
++            <div className="whitespace raised">
++              <div
++                className="markdown"
++                dangerouslySetInnerHTML={{ __html: post.html! }}
++              />
++            </div>
++            {showSidebar && (
++              <aside className="handbook-toc">
++                <nav
++                  className={deprecationInfo.shouldRedirect ? "deprecated" : ""}
++                  aria-label="table of contents"
++                >
++                  <>
++                    <h5>{i("handb_on_this_page")}</h5>
++                    <MarkdownHeadingTree
++                      tree={tableOfContents}
++                      className="handbook-on-this-page-section-list"
++                    />
++                  </>
++                  <div id="like-dislike-subnav" role="status" aria-live="polite">
++                    <h5>{i("handb_like_dislike_title")}</h5>
++                    <div>
++                      <button title="Like this page" id="like-button">
++                        <LikeUnfilledSVG /> {i("handb_like_desc")}
++                      </button>
++                      <button title="Dislike this page" id="dislike-button">
++                        <DislikeUnfilledSVG /> {i("handb_dislike_desc")}
++                      </button>
++                    </div>
++                  </div>
++                </nav>
++              </aside>
++            )}
++          </article>
++
++          <NextPrev
++            next={props.data.next as any}
++            prev={props.data.prev as any}
++            i={i}
++            IntlLink={IntlLink as any}
++          />
++          <Contributors
++            lang={props.pageContext.lang}
++            i={i}
++            path={props.pageContext.repoPath}
++            lastEdited={props.pageContext.modifiedTime}
++          />
++        </div>
++      </section>
++    </Layout>
++  )
++}
++
++export default (props: Props) => (
++  <Intl locale={props.pageContext.lang}>
++    <HandbookTemplate {...props} />
++  </Intl>
++)
++
++export const pageQuery = graphql`
++  query GetDocumentBySlug($slug: String!, $previousID: String, $nextID: String) {
++    markdownRemark(frontmatter: { permalink: { eq: $slug } }) {
++      id
++      excerpt(pruneLength: 160)
++      html
++      headings {
++        value
++        depth
++      }
++      frontmatter {
++        permalink
++        title
++        disable_toc
++        handbook
++        oneline
++        preamble
++        deprecated_by
++        deprecation_redirects
++        experimental
++      }
++    }
++
++    prev: file(id: { eq: $previousID }) {
++      childMarkdownRemark {
++        frontmatter {
++          title
++          oneline
++          permalink
++        }
++      }
++    }
++
++    next: file(id: { eq: $nextID }) {
++      childMarkdownRemark {
++        frontmatter {
++          title
++          oneline
++          permalink
++        }
++      }
++    }
++  }
++`
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/utils/index.ts b/packages/typescriptlang-org/src/utils/index.ts
+new file mode 100644
+index 00000000..842472a8
+--- /dev/null
++++ b/packages/typescriptlang-org/src/utils/index.ts
+@@ -0,0 +1,9 @@
++export {
++  renderMarkdownContent,
++  extractFrontmatter,
++  processPreamble,
++  getDocumentPrefix,
++  shouldShowTableOfContents,
++  isExperimentalDocument,
++  buildCanonicalURL,
++} from './markdownHelpers'
+\ No newline at end of file
+diff --git a/packages/typescriptlang-org/src/utils/markdownHelpers.ts b/packages/typescriptlang-org/src/utils/markdownHelpers.ts
+new file mode 100644
+index 00000000..af89c7e6
+--- /dev/null
++++ b/packages/typescriptlang-org/src/utils/markdownHelpers.ts
+@@ -0,0 +1,51 @@
++import { HeadingNode } from "../hooks/useTableOfContents"
++
++export function renderMarkdownContent(html: string | null): { __html: string } {
++  if (!html) {
++    return { __html: "" }
++  }
++  return { __html: html }
++}
++
++export function extractFrontmatter<T extends Record<string, any>>(
++  frontmatter: any
++): T {
++  if (!frontmatter) {
++    throw new Error("No front-matter found")
++  }
++  return frontmatter as T
++}
++
++export function processPreamble(preamble: string | null | undefined): {
++  __html: string
++} | null {
++  if (!preamble) {
++    return null
++  }
++  return { __html: preamble }
++}
++
++export function getDocumentPrefix(isHandbook: boolean): string {
++  return isHandbook ? "Handbook" : "Documentation"
++}
++
++export function shouldShowTableOfContents(
++  disableToc: boolean | null | undefined
++): boolean {
++  return disableToc !== true
++}
++
++export function isExperimentalDocument(
++  experimental: boolean | null | undefined
++): boolean {
++  return !!experimental
++}
++
++export function buildCanonicalURL(
++  deprecatedBy: string | null | undefined
++): string | null {
++  if (!deprecatedBy) {
++    return null
++  }
++  return `https://www.typescriptlang.org${deprecatedBy}`
++}
+\ No newline at end of file
