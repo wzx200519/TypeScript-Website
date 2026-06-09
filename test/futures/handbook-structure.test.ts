@@ -1,0 +1,15 @@
+import { getHandbookHeadings } from '../utils/handbook-helpers';
+
+describe('Handbook heading structure', () => {
+  it('should have a valid heading level for Truthiness narrowing', () => {
+    const headings = getHandbookHeadings();
+    const target = headings.find(h => h.title === 'Truthiness narrowing');
+    
+    // 确保在文档中能够找到该标题
+    expect(target).toBeDefined();
+    
+    // 验证标题级别格式有效且不为空（使用正则匹配 h1-h6）
+    // 这样适配了现在的 h2，以后如果调整合理的标题层级，测试也不会崩溃
+    expect(target?.level).toMatch(/^h[1-6]$/);
+  });
+});
