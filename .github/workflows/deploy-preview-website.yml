@@ -1,0 +1,154 @@
+name: Deploy Preview Website
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  detect:
+    name: Detect Affected Packages
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Check affected packages
+        id: check
+        run: |
+          # 1) 使用 changesets 检查包的变更
+          pnpm exec changeset status || true
+          
+          # 2) 使用 pnpm filter 检测受影响的包
+          AFFECTED=$(pnpm ls --filter "...[origin/${{ github.base_ref }}]" --depth -1 --json)
+          if [ "$AFFECTED" != "[]" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+  quality:
+    name: Quality Checks
+    needs: detect
+    if: needs.detect.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [lint, type-check, test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run ${{ matrix.task }}
+        # 并行运行受影响包的检查
+        run: pnpm --filter "...[origin/${{ github.base_ref }}]" run ${{ matrix.task }} --if-present
+
+  build-and-deploy:
+    name: Build & Deploy Preview
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build packages/typescriptlang-org
+        run: pnpm --filter typescriptlang-org build
+
+      - name: Deploy to Azure Static Web Apps
+        id: deploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PREVIEW }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "packages/typescriptlang-org/public"
+          skip_app_build: true
+          deployment_environment: pr-${{ github.event.pull_request.number }}
+
+      - name: Comment PR with Preview URL
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: https://pr-${{ github.event.pull_request.number }}.typescriptlang.org
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const previewUrl = process.env.PREVIEW_URL;
+            const body = `🎉 **官网预览环境已部署成功！**\n\n🚀 临时预览链接: [${previewUrl}](${previewUrl})\n\n*(每次提交代码将自动更新此预览)*`;
+            
+            // 查找是否已经有机器人评论
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const botComment = comments.find(c => c.user.type === 'Bot' && c.body.includes('官网预览环境已部署成功'));
+            
+            if (botComment) {
+              // 更新现有评论
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              // 创建新评论
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
