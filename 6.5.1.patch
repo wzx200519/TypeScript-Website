@@ -1,0 +1,129 @@
+diff --git a/6.5.1.patch b/6.5.1.patch
+new file mode 100644
+index 00000000..e69de29b
+diff --git a/_verify_headings.js b/_verify_headings.js
+new file mode 100644
+index 00000000..ba8feee9
+--- /dev/null
++++ b/_verify_headings.js
+@@ -0,0 +1,23 @@
++const { readFileSync, readdirSync, statSync } = require('fs');
++const { join, relative } = require('path');
++const HANDBOOK_ROOT = join(process.cwd(), 'packages/documentation/copy/en/handbook-v2');
++function collect(dir, acc = []) {
++  for (const e of readdirSync(dir)) {
++    const f = join(dir, e);
++    if (statSync(f).isDirectory()) collect(f, acc);
++    else if (e.endsWith('.md')) acc.push(f);
++  }
++  return acc;
++}
++const HEADING_REGEX = /^(#{1,6})\s+(.+?)\s*$/gm;
++const results = [];
++for (const f of collect(HANDBOOK_ROOT)) {
++  const content = readFileSync(f, 'utf8');
++  let m;
++  while ((m = HEADING_REGEX.exec(content)) !== null) {
++    results.push({ title: m[2].trim(), level: 'h' + m[1].length, file: relative(process.cwd(), f) });
++  }
++}
++const target = results.find(r => r.title === 'Truthiness narrowing');
++console.log('Truthiness narrowing:', target);
++console.log('Total headings:', results.length);
+diff --git a/test/futures/handbook-structure.test.ts b/test/futures/handbook-structure.test.ts
+new file mode 100644
+index 00000000..c1e30f10
+--- /dev/null
++++ b/test/futures/handbook-structure.test.ts
+@@ -0,0 +1,23 @@
++import { getHandbookHeadings } from '../utils/handbook-helpers';
++
++describe('Handbook heading structure', () => {
++  it('should have correct heading level for Truthiness narrowing', () => {
++    const headings = getHandbookHeadings();
++    const target = headings.find(h => h.title === 'Truthiness narrowing');
++
++    expect(target).toBeDefined();
++    expect(target!.level).toBeTruthy();
++    expect(target!.level).toMatch(/^h[1-6]$/);
++    expect(target!.level).toBe('h2');
++  });
++
++  it('should surface every heading with a non-empty, well-formed level', () => {
++    const headings = getHandbookHeadings();
++    expect(headings.length).toBeGreaterThan(0);
++
++    for (const heading of headings) {
++      expect(heading.title).toBeTruthy();
++      expect(heading.level).toMatch(/^h[1-6]$/);
++    }
++  });
++});
+diff --git a/test/utils/handbook-helpers.ts b/test/utils/handbook-helpers.ts
+new file mode 100644
+index 00000000..453146fb
+--- /dev/null
++++ b/test/utils/handbook-helpers.ts
+@@ -0,0 +1,62 @@
++import { readFileSync, readdirSync, statSync } from 'fs';
++import { join, relative } from 'path';
++
++export interface HandbookHeading {
++  title: string;
++  level: string;
++  file: string;
++}
++
++const HANDBOOK_ROOT = join(
++  __dirname,
++  '..',
++  '..',
++  'packages',
++  'documentation',
++  'copy',
++  'en',
++  'handbook-v2'
++);
++
++const HEADING_REGEX = /^(#{1,6})\s+(.+?)\s*$/gm;
++
++function collectMarkdownFiles(dir: string, acc: string[] = []): string[] {
++  for (const entry of readdirSync(dir)) {
++    const full = join(dir, entry);
++    const stats = statSync(full);
++    if (stats.isDirectory()) {
++      collectMarkdownFiles(full, acc);
++    } else if (entry.endsWith('.md')) {
++      acc.push(full);
++    }
++  }
++  return acc;
++}
++
++function parseHeadingsInFile(filePath: string): HandbookHeading[] {
++  const content = readFileSync(filePath, 'utf8');
++  const relativePath = relative(process.cwd(), filePath);
++  const results: HandbookHeading[] = [];
++  let match: RegExpExecArray | null;
++
++  while ((match = HEADING_REGEX.exec(content)) !== null) {
++    const hashes = match[1];
++    const title = match[2].trim();
++    results.push({
++      title,
++      level: `h${hashes.length}`,
++      file: relativePath,
++    });
++  }
++
++  return results;
++}
++
++export function getHandbookHeadings(): HandbookHeading[] {
++  const files = collectMarkdownFiles(HANDBOOK_ROOT);
++  const headings: HandbookHeading[] = [];
++  for (const file of files) {
++    headings.push(...parseHeadingsInFile(file));
++  }
++  return headings;
++}
