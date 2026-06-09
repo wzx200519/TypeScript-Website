@@ -195,3 +195,42 @@ Privacy information can be found at https://privacy.microsoft.com/en-us/
 
 Microsoft and any contributors reserve all other rights, whether under their respective copyrights, patents,
 or trademarks, whether by implication, estoppel or otherwise.
+
+## 贡献指南
+
+本地开发步骤：
+
+克隆仓库后运行以下命令安装依赖：
+
+```sh
+npm install
+```
+
+安装 Watchman（Windows 用户使用 choco install watchman）：
+
+```sh
+# macOS (Homebrew)
+brew install watchman
+
+# Windows (Chocolatey)
+choco install watchman
+```
+
+构建项目：
+
+```sh
+npm run build
+```
+
+执行测试：
+
+```sh
+npm test
+```
+
+提交前进行代码检查与格式化：
+
+```sh
+npm run lint
+npm run format
+```
