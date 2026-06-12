@@ -1,19 +1,47 @@
+diff --git a/6.5.5.patch b/6.5.5.patch
+index d3dad874..e69de29b 100644
+--- a/6.5.5.patch
++++ b/6.5.5.patch
+@@ -1,19 +0,0 @@
+-diff --git a/test/futures/handbook-structure.test.ts b/test/futures/handbook-structure.test.ts
+-index c769cc25..773064e3 100644
+---- a/test/futures/handbook-structure.test.ts
+-+++ b/test/futures/handbook-structure.test.ts
+-@@ -4,12 +4,9 @@ describe('Handbook heading structure', () => {
+-   it('should have a valid heading level for Truthiness narrowing', () => {
+-     const headings = getHandbookHeadings();
+-     const target = headings.find(h => h.title === 'Truthiness narrowing');
+--    
+--    // 确保在文档中能够找到该标题
+-+
+-     expect(target).toBeDefined();
+--    
+--    // 验证标题级别格式有效且不为空（使用正则匹配 h1-h6）
+--    // 这样适配了现在的 h2，以后如果调整合理的标题层级，测试也不会崩溃
+-+
+-     expect(target?.level).toMatch(/^h[1-6]$/);
+-   });
+- });
 diff --git a/test/futures/handbook-structure.test.ts b/test/futures/handbook-structure.test.ts
-index c769cc25..773064e3 100644
+index 773064e3..9ae95d64 100644
 --- a/test/futures/handbook-structure.test.ts
 +++ b/test/futures/handbook-structure.test.ts
-@@ -4,12 +4,9 @@ describe('Handbook heading structure', () => {
+@@ -1,12 +1,16 @@
+ import { getHandbookHeadings } from '../utils/handbook-helpers';
+ 
++const VALID_HEADING_LEVELS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
++const SUBSECTION_LEVELS = ['h2', 'h3'];
++
+ describe('Handbook heading structure', () => {
    it('should have a valid heading level for Truthiness narrowing', () => {
      const headings = getHandbookHeadings();
      const target = headings.find(h => h.title === 'Truthiness narrowing');
--    
--    // 确保在文档中能够找到该标题
-+
+ 
      expect(target).toBeDefined();
--    
--    // 验证标题级别格式有效且不为空（使用正则匹配 h1-h6）
--    // 这样适配了现在的 h2，以后如果调整合理的标题层级，测试也不会崩溃
-+
-     expect(target?.level).toMatch(/^h[1-6]$/);
+-
+-    expect(target?.level).toMatch(/^h[1-6]$/);
++    expect(target!.level).toBeTruthy();
++    expect(VALID_HEADING_LEVELS).toContain(target!.level);
++    expect(SUBSECTION_LEVELS).toContain(target!.level);
    });
  });
