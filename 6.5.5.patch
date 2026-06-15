@@ -2,7 +2,7 @@ diff --git a/test/futures/handbook-structure.test.ts b/test/futures/handbook-str
 index c769cc25..9ae95d64 100644
 --- a/test/futures/handbook-structure.test.ts
 +++ b/test/futures/handbook-structure.test.ts
-@@ -1,15 +1,14 @@
+@@ -1,15 +1,15 @@
  import { getHandbookHeadings } from '../utils/handbook-helpers';
  
 +const VALID_HEADING_LEVELS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
