@@ -1,38 +1,55 @@
-// packages/playground/src/compiler.ts
-import * as ts from 'typescript';
-import { ScriptTarget, ModuleKind } from 'typescript';
-
-export function getCompilerOptions(searchParams: URLSearchParams): ts.CompilerOptions {
-  const options: ts.CompilerOptions = {};
-
-  const target = searchParams.get('target');
-  if (target) {
-    // 过滤掉枚举的反向数字映射，保留真实的字符串键，并忽略大小写进行匹配
-    const targetKey = Object.keys(ScriptTarget).find(
-      key => isNaN(Number(key)) && key.toLowerCase() === target.toLowerCase()
-    );
-    if (targetKey) {
-      options.target = ScriptTarget[targetKey as keyof typeof ScriptTarget];
-    }
-  }
-
-  const module = searchParams.get('module');
-  if (module) {
-    // 同样将 module 字符串安全映射到对应的 ModuleKind 枚举值
-    const moduleKey = Object.keys(ModuleKind).find(
-      key => isNaN(Number(key)) && key.toLowerCase() === module.toLowerCase()
-    );
-    if (moduleKey) {
-      options.module = ModuleKind[moduleKey as keyof typeof ModuleKind];
-    }
-  }
-
-  const strict = searchParams.get('strict');
-  if (strict === 'true') {
-    options.strict = true;
-  } else if (strict === 'false') {
-    options.strict = false;
-  }
-
-  return options;
-}
+diff --git a/packages/playground/src/compiler.ts b/packages/playground/src/compiler.ts
+index 0000000..1111111 100644
+--- a/packages/playground/src/compiler.ts
++++ b/packages/playground/src/compiler.ts
+@@ -1,14 +1,37 @@
+-import * as ts from 'typescript';
++import * as ts from "typescript"
++import { ModuleKind, ScriptTarget } from "typescript"
+ 
+-export function getCompilerOptions(searchParams: URLSearchParams): ts.CompilerOptions {
+-  const options: ts.CompilerOptions = {};
++const getEnumValue = <T extends Record<string, string | number>>(enumObject: T, value: string) => {
++  const enumKey = Object.keys(enumObject).find(
++    key => Number.isNaN(Number(key)) && key.toLowerCase() === value.toLowerCase()
++  )
++
++  return enumKey ? (enumObject[enumKey as keyof T] as number) : undefined
++}
++
++export function getCompilerOptions(searchParams: URLSearchParams): ts.CompilerOptions {
++  const options: ts.CompilerOptions = {}
+ 
+-  const target = searchParams.get('target');
++  const target = searchParams.get("target")
+   if (target) {
+-    options.target = target; // 错误：应该为 ts.ScriptTarget
++    const targetValue = getEnumValue(ScriptTarget, target)
++    if (targetValue !== undefined) {
++      options.target = targetValue as ts.ScriptTarget
++    }
+   }
+ 
+-  const module = searchParams.get('module');
++  const module = searchParams.get("module")
+   if (module) {
+-    options.module = module;
++    const moduleValue = getEnumValue(ModuleKind, module)
++    if (moduleValue !== undefined) {
++      options.module = moduleValue as ts.ModuleKind
++    }
+   }
+ 
+-  const strict = searchParams.get('strict');
+-  if (strict === 'true') {
+-    options.strict = true;
++  const strict = searchParams.get("strict")
++  if (strict === "true") {
++    options.strict = true
++  } else if (strict === "false") {
++    options.strict = false
+   }
+ 
+-  return options;}
++  return options
++}
