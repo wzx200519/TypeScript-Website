@@ -1,20 +1,26 @@
 diff --git a/test/futures/handbook-structure.test.ts b/test/futures/handbook-structure.test.ts
-new file mode 100644
-index 00000000..9ae95d64
---- /dev/null
+index c769cc25..9ae95d64 100644
+--- a/test/futures/handbook-structure.test.ts
 +++ b/test/futures/handbook-structure.test.ts
-@@ -0,0 +1,14 @@
-+import { getHandbookHeadings } from '../utils/handbook-helpers';
-+
+@@ -1,15 +1,14 @@
+ import { getHandbookHeadings } from '../utils/handbook-helpers';
+ 
 +const VALID_HEADING_LEVELS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 +
-+describe('Handbook heading structure', () => {
-+  it('should have a valid heading level for Truthiness narrowing', () => {
-+    const headings = getHandbookHeadings();
-+    const target = headings.find(h => h.title === 'Truthiness narrowing');
+ describe('Handbook heading structure', () => {
+   it('should have a valid heading level for Truthiness narrowing', () => {
+     const headings = getHandbookHeadings();
+     const target = headings.find(h => h.title === 'Truthiness narrowing');
+-    
+-    // 确保在文档中能够找到该标题
 +
-+    expect(target).toBeDefined();
+     expect(target).toBeDefined();
+-    
+-    // 验证标题级别格式有效且不为空（使用正则匹配 h1-h6）
+-    // 这样适配了现在的 h2，以后如果调整合理的标题层级，测试也不会崩溃
+-    expect(target?.level).toMatch(/^h[1-6]$/);
++
 +    expect(target!.level).toBeTruthy();
 +    expect(VALID_HEADING_LEVELS).toContain(target!.level);
-+  });
-+});
+   });
+ });
